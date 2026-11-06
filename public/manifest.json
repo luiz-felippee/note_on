@@ -1,0 +1,11 @@
+{
+  "name": "NoteOn — Estudos Cronológicos",
+  "short_name": "NoteOn",
+  "description": "Sistema de anotações de estudos com fotos, áudios e linha do tempo cronológica sincronizada.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#6366f1",
+  "orientation": "any"
+}
+
