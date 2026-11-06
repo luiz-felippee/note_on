@@ -104,6 +104,19 @@ export default function App() {
   const [newCourseName, setNewCourseName] = useState('');
   const [newCourseDesc, setNewCourseDesc] = useState('');
 
+  // Editing state for Course, Subject, Topic
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [editCourseName, setEditCourseName] = useState('');
+  const [editCourseDesc, setEditCourseDesc] = useState('');
+
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [editSubjName, setEditSubjName] = useState('');
+  const [editSubjCourseId, setEditSubjCourseId] = useState('');
+  const [editSubjColor, setEditSubjColor] = useState(SUBJECT_COLORS[0]);
+
+  const [editingTopic, setEditingTopic] = useState<StudyTopic | null>(null);
+  const [editTopicTitle, setEditTopicTitle] = useState('');
+
   const [showNewSubjectModal, setShowNewSubjectModal] = useState(false);
   const [newSubjName, setNewSubjName] = useState('');
   const [newSubjCourseId, setNewSubjCourseId] = useState<string>('');
@@ -851,6 +864,51 @@ export default function App() {
     setShowNewTopicModal(false);
   };
 
+  // Update Existing Course
+  const handleUpdateCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCourse || !editCourseName.trim()) return;
+    const updated: Course = {
+      ...editingCourse,
+      name: editCourseName.trim(),
+      description: editCourseDesc.trim() || undefined,
+      updatedAt: Date.now(),
+    };
+    await saveCourse(updated);
+    setCourses((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    setEditingCourse(null);
+  };
+
+  // Update Existing Subject
+  const handleUpdateSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSubject || !editSubjName.trim()) return;
+    const updated: Subject = {
+      ...editingSubject,
+      name: editSubjName.trim(),
+      courseId: editSubjCourseId || editingSubject.courseId,
+      color: editSubjColor,
+      updatedAt: Date.now(),
+    };
+    await saveSubject(updated);
+    setSubjects((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    setEditingSubject(null);
+  };
+
+  // Update Existing Topic / Lesson
+  const handleUpdateTopic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTopic || !editTopicTitle.trim()) return;
+    const updated: StudyTopic = {
+      ...editingTopic,
+      title: editTopicTitle.trim(),
+      updatedAt: Date.now(),
+    };
+    await saveTopic(updated);
+    setTopics((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setEditingTopic(null);
+  };
+
   const handleExportFullBackup = async () => {
     setShowHeaderMenu(false);
     const json = await exportFullBackupJson();
@@ -1104,22 +1162,39 @@ export default function App() {
                         </div>
 
                         {courses.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (
-                                confirm(
-                                  `Excluir o curso "${crs.name}" e todas as suas matérias e aulas vinculadas?`
-                                )
-                              ) {
-                                deleteCourseAndChildren(crs.id).then(reloadAllData);
-                              }
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCourse(crs);
+                                setEditCourseName(crs.name);
+                                setEditCourseDesc(crs.description || '');
+                                setShowCourseDropdown(false);
+                              }}
+                              className="p-1 text-slate-400 hover:text-indigo-400 cursor-pointer"
+                              title="Editar Curso"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (
+                                  confirm(
+                                    `Excluir o curso "${crs.name}" e todas as suas matérias e aulas vinculadas?`
+                                  )
+                                ) {
+                                  deleteCourseAndChildren(crs.id).then(reloadAllData);
+                                }
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
+                              title="Excluir Curso"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -1216,22 +1291,39 @@ export default function App() {
                           ({lessonsCount})
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (
-                            confirm(
-                              `Excluir a matéria "${subj.name}" e todas as suas aulas?`
-                            )
-                          ) {
-                            deleteSubjectAndChildren(subj.id).then(reloadAllData);
-                          }
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSubject(subj);
+                            setEditSubjName(subj.name);
+                            setEditSubjCourseId(subj.courseId);
+                            setEditSubjColor(subj.color || SUBJECT_COLORS[0]);
+                          }}
+                          className="p-1 text-slate-400 hover:text-indigo-400 cursor-pointer"
+                          title="Editar Matéria"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (
+                              confirm(
+                                `Excluir a matéria "${subj.name}" e todas as suas aulas?`
+                              )
+                            ) {
+                              deleteSubjectAndChildren(subj.id).then(reloadAllData);
+                            }
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
+                          title="Excluir Matéria"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -1278,10 +1370,19 @@ export default function App() {
                           : 'hover:bg-slate-800/40 text-slate-400'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium truncate">
-                          {tp.title}
-                        </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingTopic(tp);
+                            setEditTopicTitle(tp.title);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-400 shrink-0 cursor-pointer"
+                          title="Editar Aula"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1291,6 +1392,7 @@ export default function App() {
                             }
                           }}
                           className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-400 shrink-0 cursor-pointer"
+                          title="Excluir Aula"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -1363,8 +1465,19 @@ export default function App() {
                   {currentTopic.startTime.slice(0, 5)}
                 </span>
               </div>
-              <h2 className="text-base md:text-lg font-bold tracking-tight truncate mt-0.5">
-                {currentTopic.title}
+              <h2 className="text-base md:text-lg font-bold tracking-tight truncate mt-0.5 flex items-center gap-2">
+                <span>{currentTopic.title}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTopic(currentTopic);
+                    setEditTopicTitle(currentTopic.title);
+                  }}
+                  className="text-slate-500 hover:text-indigo-400 cursor-pointer p-0.5 rounded transition"
+                  title="Editar Título da Aula"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
               </h2>
             </div>
 
@@ -1995,6 +2108,199 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Modal: Edit Course */}
+      {editingCourse && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-indigo-400" />
+                <span>Editar Curso</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingCourse(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateCourse} className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">
+                  Nome do Curso *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCourseName}
+                  onChange={(e) => setEditCourseName(e.target.value)}
+                  className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">
+                  Descrição (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={editCourseDesc}
+                  onChange={(e) => setEditCourseDesc(e.target.value)}
+                  className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingCourse(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-xs font-semibold text-white cursor-pointer"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Subject */}
+      {editingSubject && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-indigo-400" />
+                <span>Editar Matéria</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingSubject(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateSubject} className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Curso *</label>
+                <select
+                  value={editSubjCourseId}
+                  onChange={(e) => setEditSubjCourseId(e.target.value)}
+                  className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white"
+                >
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">
+                  Nome da Matéria *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editSubjName}
+                  onChange={(e) => setEditSubjName(e.target.value)}
+                  className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">
+                  Cor de Identificação
+                </label>
+                <div className="flex items-center gap-2">
+                  {SUBJECT_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditSubjColor(c)}
+                      style={{ backgroundColor: c }}
+                      className={`w-6 h-6 rounded-full border-2 transition cursor-pointer ${
+                        editSubjColor === c ? 'border-white scale-110' : 'border-transparent'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingSubject(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-xs font-semibold text-white cursor-pointer"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Topic / Aula */}
+      {editingTopic && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-indigo-400" />
+                <span>Editar Título da Aula</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingTopic(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateTopic} className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">
+                  Título da Aula *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTopicTitle}
+                  onChange={(e) => setEditTopicTitle(e.target.value)}
+                  className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingTopic(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-xs font-semibold text-white cursor-pointer"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal: New Course */}
       {showNewCourseModal && (
