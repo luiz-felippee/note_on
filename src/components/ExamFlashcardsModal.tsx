@@ -169,10 +169,9 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
             </span>
             <h2 className="text-lg md:text-xl font-bold text-white mt-1">
               {currentItem.title ||
-                `O que foi explicado às ${currentItem.timeLabel} nesta ${
-                  currentItem.type === 'photo'
-                    ? 'foto da lousa'
-                    : currentItem.type === 'audio'
+                `O que foi explicado às ${currentItem.timeLabel} nesta ${currentItem.type === 'photo'
+                  ? 'foto da lousa'
+                  : currentItem.type === 'audio'
                     ? 'gravação de áudio'
                     : 'anotação'
                 }?`}
@@ -289,15 +288,14 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
                   setRevealed(false);
                   setCurrentIndex(idx);
                 }}
-                className={`w-2.5 h-2.5 rounded-full transition cursor-pointer ${
-                  idx === currentIndex
-                    ? 'bg-indigo-400 scale-125'
-                    : it.flashcardStatus === 'mastered'
+                className={`w-2.5 h-2.5 rounded-full transition cursor-pointer ${idx === currentIndex
+                  ? 'bg-indigo-400 scale-125'
+                  : it.flashcardStatus === 'mastered'
                     ? 'bg-emerald-500'
                     : it.flashcardStatus === 'review_again'
-                    ? 'bg-rose-500'
-                    : 'bg-slate-700'
-                }`}
+                      ? 'bg-rose-500'
+                      : 'bg-slate-700'
+                  }`}
                 title={`Card ${idx + 1}`}
               />
             ))}
