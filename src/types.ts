@@ -80,6 +80,13 @@ export interface TimelineItem {
   lectureOffsetSeconds?: number;
   linkedAudioItemId?: string;
   flashcardStatus?: 'mastered' | 'review_again' | 'unseen';
+  // Spaced Repetition (SM-2 / Anki)
+  repetitionIntervalDays?: number;
+  repetitionEaseFactor?: number;
+  repetitionStep?: number;
+  nextReviewTimestamp?: number;
+  lastReviewedTimestamp?: number;
+  repetitionHistoryCount?: number;
   photoHighlights?: PhotoHighlightStroke[];
   syncStatus?: 'local' | 'syncing' | 'synced';
 }

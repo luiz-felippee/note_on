@@ -30,6 +30,9 @@ import {
   Send,
   ChevronDown,
   AlertTriangle,
+  Sparkles,
+  Smartphone,
+  Bell,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -40,6 +43,11 @@ import {
   TimelineItemType,
   PhotoHighlightStroke,
 } from './types';
+import {
+  calculateSM2Review,
+  getDueItemsForReview,
+  SM2Rating,
+} from './services/spacedRepetitionService';
 import {
   ensureInitialSeedData,
   getAllCourses,
@@ -155,6 +163,62 @@ export default function App() {
       confirmText,
       onConfirm,
     });
+  };
+
+  // PWA Install & Notifications
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<string>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+  const [reviewOnlyDueCards, setReviewOnlyDueCards] = useState(false);
+
+  useEffect(() => {
+    const isStandaloneMode =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+    setIsStandalone(isStandaloneMode);
+
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      if (!isStandaloneMode) {
+        setShowInstallBanner(true);
+      }
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (!installPrompt) {
+      alert(
+        'Para instalar no iPhone/iPad: Toque no botão Compartilhar do Safari e selecione "Adicionar à Tela de Início".'
+      );
+      return;
+    }
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false);
+    }
+    setInstallPrompt(null);
+  };
+
+  const handleRequestNotifications = async () => {
+    if (!('Notification' in window)) {
+      alert('Seu navegador não suporta notificações.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission === 'granted') {
+      new Notification('NoteOn — Lembretes Ativados! 🔔', {
+        body: 'Você receberá avisos quando houver flashcards pendentes de revisão.',
+        icon: '/favicon.svg',
+      });
+    }
   };
 
   // Programmatic Audio Seek
@@ -739,6 +803,15 @@ export default function App() {
     await saveTimelineItem(updated);
   };
 
+  const handleSM2Grade = async (itemId: string, rating: SM2Rating) => {
+    const target = allItems.find((i) => i.id === itemId);
+    if (!target) return;
+    const sm2Updates = calculateSM2Review(target, rating);
+    const updated: TimelineItem = { ...target, ...sm2Updates };
+    setAllItems((prev) => prev.map((it) => (it.id === itemId ? updated : it)));
+    await saveTimelineItem(updated);
+  };
+
   const handleSaveItemEdit = async (item: TimelineItem) => {
     const updated: TimelineItem = {
       ...item,
@@ -1028,6 +1101,12 @@ export default function App() {
     [allItems, selectedSubjectId]
   );
 
+  const allDueCards = useMemo(() => getDueItemsForReview(allItems), [allItems]);
+  const subjectDueCards = useMemo(
+    () => getDueItemsForReview(allItems, selectedSubjectId),
+    [allItems, selectedSubjectId]
+  );
+
   const currentTopicPhotos = useMemo(
     () => currentTopicItems.filter((i) => i.type === 'photo'),
     [currentTopicItems]
@@ -1065,7 +1144,21 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {subjectDueCards.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setReviewOnlyDueCards(true);
+                setShowFlashcardsModal(true);
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1 cursor-pointer animate-pulse"
+              title="Cards agendados para hoje"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Hoje ({subjectDueCards.length})</span>
+            </button>
+          )}
           {stats.photos > 0 && (
             <button
               type="button"
@@ -1084,6 +1177,32 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* PWA Install Banner */}
+      {showInstallBanner && !isStandalone && (
+        <div className="bg-indigo-600 px-4 py-2.5 text-white flex items-center justify-between gap-3 text-xs shadow-md sticky top-12 z-30">
+          <div className="flex items-center gap-2 truncate">
+            <Smartphone className="w-4 h-4 shrink-0" />
+            <span className="truncate font-medium">Instale o NoteOn no celular para usar offline!</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleInstallPwa}
+              className="px-3 py-1 bg-white text-indigo-700 font-bold rounded-lg cursor-pointer hover:bg-slate-100 transition shadow-xs"
+            >
+              Instalar
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowInstallBanner(false)}
+              className="p-1 text-white/80 hover:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Drawer Backdrop */}
       {mobileSidebarOpen && (
@@ -1574,6 +1693,22 @@ export default function App() {
                 </button>
               </div>
 
+              {/* SM-2 Spaced Repetition Due Today Action */}
+              {subjectDueCards.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewOnlyDueCards(true);
+                    setShowFlashcardsModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 animate-pulse shadow-sm"
+                  title="Flashcards agendados pelo algoritmo SM-2 para hoje"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Revisões Hoje ({subjectDueCards.length})</span>
+                </button>
+              )}
+
               {/* Options Menu */}
               <div className="relative shrink-0">
                 <button
@@ -1662,6 +1797,36 @@ export default function App() {
                       >
                         <Upload className="w-4 h-4 text-slate-400" />
                         <span>Restaurar Backup (.json)</span>
+                      </button>
+
+                      <div className="my-1 border-t border-slate-800/60" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowHeaderMenu(false);
+                          handleInstallPwa();
+                        }}
+                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-indigo-400 font-medium"
+                      >
+                        <Smartphone className="w-4 h-4" />
+                        <span>{isStandalone ? 'App Instalado (PWA)' : 'Instalar NoteOn no Celular'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowHeaderMenu(false);
+                          handleRequestNotifications();
+                        }}
+                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-amber-400 font-medium"
+                      >
+                        <Bell className="w-4 h-4" />
+                        <span>
+                          {notificationPermission === 'granted'
+                            ? 'Lembretes Ativados 🔔'
+                            : 'Ativar Lembretes de Estudo'}
+                        </span>
                       </button>
 
                       <div className="my-1 border-t border-slate-800/60" />
@@ -2577,11 +2742,19 @@ export default function App() {
 
       {showFlashcardsModal && currentSubject && (
         <ExamFlashcardsModal
-          items={subjectExamFlashcards}
+          items={
+            reviewOnlyDueCards && subjectDueCards.length > 0
+              ? subjectDueCards
+              : subjectExamFlashcards
+          }
           subjectName={currentSubject.name}
           accentColor={currentSubject.color}
-          onClose={() => setShowFlashcardsModal(false)}
+          onClose={() => {
+            setShowFlashcardsModal(false);
+            setReviewOnlyDueCards(false);
+          }}
           onUpdateStatus={handleUpdateFlashcardStatus}
+          onSM2Grade={handleSM2Grade}
         />
       )}
 

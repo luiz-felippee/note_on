@@ -14,6 +14,11 @@ import {
 } from 'lucide-react';
 import { TimelineItem } from '../types';
 import { AudioPlayerCard } from './AudioPlayerCard';
+import {
+  SM2Rating,
+  getSM2NextIntervals,
+  formatSM2IntervalDays,
+} from '../services/spacedRepetitionService';
 
 interface ExamFlashcardsModalProps {
   items: TimelineItem[];
@@ -21,6 +26,7 @@ interface ExamFlashcardsModalProps {
   accentColor: string;
   onClose: () => void;
   onUpdateStatus: (itemId: string, status: 'mastered' | 'review_again') => void;
+  onSM2Grade?: (itemId: string, rating: SM2Rating) => void;
 }
 
 export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
@@ -29,6 +35,7 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
   accentColor,
   onClose,
   onUpdateStatus,
+  onSM2Grade,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -71,6 +78,24 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
   const goPrev = () => {
     setRevealed(false);
     setCurrentIndex((i) => (i - 1 + items.length) % items.length);
+  };
+
+  const intervals = getSM2NextIntervals(currentItem);
+
+  const handleSM2Rating = (rating: SM2Rating) => {
+    if (onSM2Grade) {
+      onSM2Grade(currentItem.id, rating);
+    } else {
+      onUpdateStatus(
+        currentItem.id,
+        rating === 'again' || rating === 'hard' ? 'review_again' : 'mastered'
+      );
+    }
+    if (currentIndex < items.length - 1) {
+      goNext();
+    } else {
+      setRevealed(true);
+    }
   };
 
   const handleGrade = (status: 'mastered' | 'review_again') => {
@@ -240,27 +265,64 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
                 {currentItem.content}
               </p>
 
-              {/* Self-Assessment Buttons */}
-              <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <span className="text-xs text-slate-400">
-                  Como foi sua lembrança deste conteúdo?
-                </span>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5">
+              {/* SM-2 Spaced Repetition Buttons */}
+              <div className="pt-3 border-t border-slate-800 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span>Como foi sua lembrança deste conteúdo?</span>
+                  {currentItem.repetitionIntervalDays ? (
+                    <span className="font-mono text-[11px] text-indigo-300">
+                      Ciclo: {currentItem.repetitionIntervalDays}d • Facilidade: {Math.round((currentItem.repetitionEaseFactor || 2.5) * 100)}%
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[11px] text-amber-300">
+                      Card Novo (Primeira Revisão)
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <button
                     type="button"
-                    onClick={() => handleGrade('review_again')}
-                    className="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    onClick={() => handleSM2Rating('again')}
+                    className="p-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 flex flex-col items-center justify-center transition cursor-pointer"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Preciso Revisar de Novo</span>
+                    <span className="text-xs font-bold">Errei</span>
+                    <span className="text-[10px] font-mono text-rose-400 mt-0.5">
+                      {formatSM2IntervalDays(intervals.again)}
+                    </span>
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => handleGrade('mastered')}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/25 transition cursor-pointer"
+                    onClick={() => handleSM2Rating('hard')}
+                    className="p-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 flex flex-col items-center justify-center transition cursor-pointer"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Dominei (Acertei!)</span>
+                    <span className="text-xs font-bold">Difícil</span>
+                    <span className="text-[10px] font-mono text-amber-400 mt-0.5">
+                      {formatSM2IntervalDays(intervals.hard)}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSM2Rating('good')}
+                    className="p-2.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-indigo-300 flex flex-col items-center justify-center transition cursor-pointer"
+                  >
+                    <span className="text-xs font-bold">Bom</span>
+                    <span className="text-[10px] font-mono text-indigo-400 mt-0.5">
+                      {formatSM2IntervalDays(intervals.good)}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSM2Rating('easy')}
+                    className="p-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 flex flex-col items-center justify-center transition cursor-pointer shadow-lg shadow-emerald-500/10"
+                  >
+                    <span className="text-xs font-bold">Fácil</span>
+                    <span className="text-[10px] font-mono text-emerald-400 mt-0.5">
+                      {formatSM2IntervalDays(intervals.easy)}
+                    </span>
                   </button>
                 </div>
               </div>
