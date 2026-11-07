@@ -81,34 +81,43 @@ export const PhotoViewerModal: React.FC<PhotoViewerModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col">
       {/* Top Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/80">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30">
-            <Clock className="w-3.5 h-3.5" />
-            {item.timeLabel} • {item.dateLabel}
-          </span>
-          <h3 className="text-sm md:text-base font-semibold text-white truncate">
-            {item.title || 'Foto de Estudo'}
-          </h3>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-800 bg-slate-900/90 shrink-0">
+        <div className="flex items-center justify-between sm:justify-start gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 font-mono text-[11px] font-semibold flex items-center gap-1 border border-indigo-500/30 shrink-0">
+              <Clock className="w-3 h-3" />
+              {item.timeLabel}
+            </span>
+            <h3 className="text-xs sm:text-sm md:text-base font-semibold text-white truncate">
+              {item.title || 'Foto de Estudo'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer sm:hidden shrink-0"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
           <button
             type="button"
             onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer shrink-0"
             title="Diminuir Zoom"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          <span className="text-xs font-mono text-slate-300 w-12 text-center">
+          <span className="text-xs font-mono text-slate-300 w-10 text-center shrink-0">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
             onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer shrink-0"
             title="Aumentar Zoom"
           >
             <ZoomIn className="w-4 h-4" />
@@ -117,36 +126,36 @@ export const PhotoViewerModal: React.FC<PhotoViewerModalProps> = ({
           <button
             type="button"
             onClick={() => setRotation((r) => (r + 90) % 360)}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer shrink-0"
             title="Girar 90°"
           >
             <RotateCw className="w-4 h-4" />
           </button>
 
-          <div className="h-5 w-px bg-slate-700 mx-1" />
+          <div className="h-5 w-px bg-slate-700 mx-0.5 shrink-0" />
 
           <button
             type="button"
             onClick={() => setIsHighlighting((v) => !v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
               isHighlighting
                 ? 'bg-amber-500 text-slate-950 font-semibold shadow-lg shadow-amber-500/25'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
             }`}
           >
             <Highlighter className="w-4 h-4" />
-            <span>{isHighlighting ? 'Marca-Texto Ativo' : 'Grifar Foto'}</span>
+            <span>{isHighlighting ? 'Marca-Texto' : 'Grifar'}</span>
           </button>
 
           {isHighlighting && (
-            <div className="flex items-center gap-1.5 bg-slate-800 px-2 py-1 rounded-lg">
+            <div className="flex items-center gap-1.5 bg-slate-800 px-2 py-1 rounded-lg shrink-0">
               {HIGHLIGHT_COLORS.map((c) => (
                 <button
                   key={c.name}
                   type="button"
                   onClick={() => setSelectedColor(c.value)}
                   style={{ backgroundColor: c.value.replace('0.48', '0.95') }}
-                  className={`w-5 h-5 rounded-full border-2 transition cursor-pointer ${
+                  className={`w-4 h-4 rounded-full border-2 transition cursor-pointer ${
                     selectedColor === c.value
                       ? 'border-white scale-110'
                       : 'border-transparent opacity-70'
@@ -161,7 +170,7 @@ export const PhotoViewerModal: React.FC<PhotoViewerModalProps> = ({
                   className="p-1 text-rose-400 hover:text-rose-300 ml-1 cursor-pointer"
                   title="Limpar marcações"
                 >
-                  <Eraser className="w-4 h-4" />
+                  <Eraser className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
@@ -171,7 +180,7 @@ export const PhotoViewerModal: React.FC<PhotoViewerModalProps> = ({
             <a
               href={item.mediaDataUrl}
               download={`foto-${item.timeLabel.replace(/:/g, '-')}.png`}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+              className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition shrink-0"
               title="Baixar Foto"
             >
               <Download className="w-4 h-4" />
@@ -181,7 +190,7 @@ export const PhotoViewerModal: React.FC<PhotoViewerModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition cursor-pointer ml-1"
+            className="p-1.5 sm:p-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition cursor-pointer hidden sm:flex shrink-0"
             title="Fechar (Esc)"
           >
             <X className="w-5 h-5" />

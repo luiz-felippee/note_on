@@ -79,16 +79,16 @@ export const BoardCarouselModal: React.FC<BoardCarouselModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col">
       {/* Top Bar */}
-      <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="px-3 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold">
-            Quadro {index + 1} de {photoItems.length}
+      <div className="px-4 sm:px-5 py-2.5 sm:py-3.5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between gap-2.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="px-2.5 sm:px-3 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold shrink-0">
+            {index + 1} / {photoItems.length}
           </span>
-          <span className="font-mono text-xs text-amber-300 flex items-center gap-1">
+          <span className="font-mono text-xs text-amber-300 flex items-center gap-1 shrink-0">
             <Clock className="w-3.5 h-3.5" />
-            {currentPhoto.timeLabel} • {currentPhoto.dateLabel}
+            {currentPhoto.timeLabel}
           </span>
-          <span className="text-xs text-slate-400 hidden sm:inline">
+          <span className="text-xs text-slate-400 truncate hidden sm:inline">
             {subjectName}
           </span>
         </div>
@@ -96,21 +96,21 @@ export const BoardCarouselModal: React.FC<BoardCarouselModalProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+          className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer shrink-0"
         >
           <X className="w-5 h-5" />
         </button>
       </div>
 
       {/* Main Split View: Photo Slide + Synchronized Notes & Audio */}
-      <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 md:p-8 max-w-7xl w-full mx-auto items-center">
+      <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto items-start lg:items-center">
         {/* Left 2 Columns: The Board Photo */}
-        <div className="lg:col-span-2 flex flex-col items-center justify-center bg-slate-900/70 border border-slate-800 rounded-2xl p-4 relative min-h-[360px]">
-          <div className="relative inline-block max-h-[68vh] rounded-xl overflow-hidden">
+        <div className="lg:col-span-2 flex flex-col items-center justify-center bg-slate-900/70 border border-slate-800 rounded-2xl p-2 sm:p-4 relative min-h-[220px] sm:min-h-[360px] w-full">
+          <div className="relative inline-block max-h-[46vh] lg:max-h-[68vh] rounded-xl overflow-hidden">
             <img
               src={currentPhoto.mediaDataUrl}
               alt={currentPhoto.title || 'Quadro'}
-              className="max-h-[68vh] w-auto object-contain block"
+              className="max-h-[46vh] lg:max-h-[68vh] w-auto object-contain block mx-auto"
             />
             {currentPhoto.photoHighlights &&
               currentPhoto.photoHighlights.length > 0 && (

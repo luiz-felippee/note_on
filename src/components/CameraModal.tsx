@@ -76,12 +76,13 @@ export const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800">
-          <div className="flex items-center gap-2 text-white font-semibold">
-            <Camera className="w-5 h-5 text-indigo-400" />
-            <span>Capturar Foto para a Linha do Tempo</span>
+    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+      <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl max-h-[95vh] flex flex-col">
+        <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mt-2.5 sm:hidden" />
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-800">
+          <div className="flex items-center gap-2 text-white font-semibold text-sm sm:text-base">
+            <Camera className="w-4 sm:w-5 h-4 sm:h-5 text-indigo-400 shrink-0" />
+            <span className="truncate">Capturar Foto</span>
           </div>
           <button
             type="button"
@@ -92,7 +93,7 @@ export const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) 
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-4 sm:p-5 overflow-y-auto">
           {error ? (
             <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 text-rose-300 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -113,13 +114,13 @@ export const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) 
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 sm:gap-4">
                 <button
                   type="button"
                   onClick={() =>
                     setFacingMode((m) => (m === 'environment' ? 'user' : 'environment'))
                   }
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium flex items-center gap-2 transition cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center gap-2 transition cursor-pointer"
                 >
                   <RefreshCw className="w-4 h-4" />
                   <span>Inverter Câmera</span>
@@ -128,7 +129,7 @@ export const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) 
                 <button
                   type="button"
                   onClick={takeSnapshot}
-                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
                   <span>Tirar Foto Agora</span>

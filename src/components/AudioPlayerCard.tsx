@@ -135,80 +135,84 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
 
   return (
     <div
-      className={`rounded-xl bg-slate-950/60 border px-3.5 py-3 transition-all duration-300 ${
+      className={`rounded-xl bg-slate-950/60 border p-3 sm:px-3.5 sm:py-3 transition-all duration-300 ${
         pulseHighlight
           ? 'border-indigo-400 ring-2 ring-indigo-400/30'
           : 'border-slate-800/80'
       }`}
     >
       <audio ref={audioRef} src={src} preload="metadata" />
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={togglePlay}
-          style={{ backgroundColor: accentColor }}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md hover:brightness-110 active:scale-95 transition shrink-0 cursor-pointer"
-          title={isPlaying ? 'Pausar' : 'Reproduzir'}
-        >
-          {isPlaying ? (
-            <Pause className="w-4 h-4" />
-          ) : (
-            <Play className="w-4 h-4 ml-0.5" />
-          )}
-        </button>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={togglePlay}
+            style={{ backgroundColor: accentColor }}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md hover:brightness-110 active:scale-95 transition shrink-0 cursor-pointer"
+            title={isPlaying ? 'Pausar' : 'Reproduzir'}
+          >
+            {isPlaying ? (
+              <Pause className="w-4 h-4" />
+            ) : (
+              <Play className="w-4 h-4 ml-0.5" />
+            )}
+          </button>
 
-        {/* Interactive Waveform */}
-        <div
-          className="flex-1 h-8 flex items-center gap-1 cursor-pointer select-none"
-          title="Clique para avançar ou voltar no áudio"
-        >
-          {bars.map((val, idx) => {
-            const barRatio = idx / bars.length;
-            const isPlayed = barRatio <= progressRatio;
-            const heightPct = Math.max(20, Math.min(100, Math.round(val * 100)));
-            return (
-              <div
-                key={idx}
-                onClick={() => handleSeekBarIndex(idx)}
-                className="flex-1 h-full flex items-center justify-center group"
-              >
+          {/* Interactive Waveform */}
+          <div
+            className="flex-1 h-8 flex items-center gap-1 cursor-pointer select-none"
+            title="Clique para avançar ou voltar no áudio"
+          >
+            {bars.map((val, idx) => {
+              const barRatio = idx / bars.length;
+              const isPlayed = barRatio <= progressRatio;
+              const heightPct = Math.max(20, Math.min(100, Math.round(val * 100)));
+              return (
                 <div
-                  style={{
-                    height: `${heightPct}%`,
-                    backgroundColor: isPlayed ? accentColor : undefined,
-                  }}
-                  className={`w-full max-w-[5px] rounded-full transition-all ${
-                    isPlayed
-                      ? 'opacity-100'
-                      : 'bg-slate-700/80 group-hover:bg-slate-500'
-                  }`}
-                />
-              </div>
-            );
-          })}
+                  key={idx}
+                  onClick={() => handleSeekBarIndex(idx)}
+                  className="flex-1 h-full flex items-center justify-center group"
+                >
+                  <div
+                    style={{
+                      height: `${heightPct}%`,
+                      backgroundColor: isPlayed ? accentColor : undefined,
+                    }}
+                    className={`w-full max-w-[5px] rounded-full transition-all ${
+                      isPlayed
+                        ? 'opacity-100'
+                        : 'bg-slate-700/80 group-hover:bg-slate-500'
+                    }`}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Compact Time & Speed Controls */}
-        <div className="flex items-center gap-2 shrink-0 text-xs font-mono text-slate-400">
+        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 text-xs font-mono text-slate-400 pl-1 sm:pl-0">
           <span>
             {formatTime(currentTime)} / {formatTime(effectiveDuration)}
           </span>
-          <button
-            type="button"
-            onClick={cycleSpeed}
-            className="px-2 py-0.5 rounded-md bg-slate-800/90 hover:bg-slate-700 text-slate-200 font-semibold border border-slate-700/80 transition cursor-pointer"
-            title="Velocidade"
-          >
-            {playbackRate}x
-          </button>
-          <a
-            href={src}
-            download={`${title || 'audio-aula'}.wav`}
-            className="p-1 text-slate-400 hover:text-white transition"
-            title="Baixar áudio"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </a>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={cycleSpeed}
+              className="px-2 py-0.5 rounded-md bg-slate-800/90 hover:bg-slate-700 text-slate-200 font-semibold border border-slate-700/80 transition cursor-pointer"
+              title="Velocidade"
+            >
+              {playbackRate}x
+            </button>
+            <a
+              href={src}
+              download={`${title || 'audio-aula'}.wav`}
+              className="p-1 text-slate-400 hover:text-white transition"
+              title="Baixar áudio"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </a>
+          </div>
         </div>
       </div>
 

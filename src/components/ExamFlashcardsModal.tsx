@@ -83,32 +83,32 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col p-4 md:p-8 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col p-2 sm:p-4 md:p-8 overflow-y-auto">
       <div className="max-w-3xl w-full mx-auto my-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Top Header */}
-        <div className="px-5 py-4 border-b border-slate-800 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+        <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-800 bg-slate-950/60 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-sm md:text-base font-bold text-white">
-                Modo Revisão Ativa & Flashcards — {subjectName}
+            <div className="truncate">
+              <h3 className="text-sm md:text-base font-bold text-white truncate">
+                Flashcards — {subjectName}
               </h3>
-              <p className="text-xs text-slate-400">
-                Card {currentIndex + 1} de {items.length} • Tente lembrar antes de revelar a resposta!
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                Card {currentIndex + 1} de {items.length} • Lembre-se antes de revelar!
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-mono">
+              <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <Trophy className="w-3.5 h-3.5" />
-                Dominei: {masteredCount}
+                <span className="hidden xs:inline">Dominei:</span> {masteredCount}
               </span>
-              <span className="px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30">
-                Revisar: {reviewAgainCount}
+              <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                <span className="hidden xs:inline">Revisar:</span> {reviewAgainCount}
               </span>
             </div>
 
@@ -242,15 +242,15 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
               </p>
 
               {/* Self-Assessment Buttons */}
-              <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <span className="text-xs text-slate-400">
                   Como foi sua lembrança deste conteúdo?
                 </span>
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5">
                   <button
                     type="button"
                     onClick={() => handleGrade('review_again')}
-                    className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Preciso Revisar de Novo</span>
@@ -258,7 +258,7 @@ export const ExamFlashcardsModal: React.FC<ExamFlashcardsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleGrade('mastered')}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-emerald-600/25 transition cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/25 transition cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Dominei (Acertei!)</span>

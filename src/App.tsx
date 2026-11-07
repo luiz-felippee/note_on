@@ -1162,7 +1162,7 @@ export default function App() {
                         </div>
 
                         {courses.length > 1 && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                          <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 shrink-0">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1291,7 +1291,7 @@ export default function App() {
                           ({lessonsCount})
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                      <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 shrink-0">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1370,32 +1370,35 @@ export default function App() {
                           : 'hover:bg-slate-800/40 text-slate-400'
                       }`}
                     >
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingTopic(tp);
-                            setEditTopicTitle(tp.title);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-400 shrink-0 cursor-pointer"
-                          title="Editar Aula"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`Excluir "${tp.title}"?`)) {
-                              deleteTopicAndItems(tp.id).then(reloadAllData);
-                            }
-                          }}
-                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-400 shrink-0 cursor-pointer"
-                          title="Excluir Aula"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-medium truncate flex-1">{tp.title}</span>
+                        <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingTopic(tp);
+                              setEditTopicTitle(tp.title);
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-400 shrink-0 cursor-pointer"
+                            title="Editar Aula"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Excluir "${tp.title}"?`)) {
+                                deleteTopicAndItems(tp.id).then(reloadAllData);
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-rose-400 shrink-0 cursor-pointer"
+                            title="Excluir Aula"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                       <div className="flex items-center justify-between text-[10px] font-mono opacity-70 mt-1">
                         <span>
@@ -1440,7 +1443,7 @@ export default function App() {
         {/* Clean Header: Course › Subject › Lesson */}
         {currentTopic && currentSubject && (
           <div
-            className={`px-4 md:px-8 py-3.5 border-b shrink-0 flex flex-wrap items-center justify-between gap-4 ${
+            className={`px-3.5 sm:px-6 md:px-8 py-2.5 sm:py-3.5 border-b shrink-0 flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-4 ${
               lightMode
                 ? 'bg-white border-slate-200'
                 : 'bg-slate-950/90 border-slate-800/80'
@@ -1448,32 +1451,32 @@ export default function App() {
           >
             {/* Breadcrumb Hierarchy */}
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className="text-slate-300 font-semibold">
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-x-auto no-scrollbar whitespace-nowrap py-0.5">
+                <span className="text-slate-300 font-semibold truncate max-w-[120px] sm:max-w-none">
                   {currentCourse?.name || 'Curso'}
                 </span>
                 <span>›</span>
                 <span
                   style={{ color: currentSubject.color }}
-                  className="font-medium"
+                  className="font-medium truncate max-w-[140px] sm:max-w-none"
                 >
                   {currentSubject.name}
                 </span>
                 <span>›</span>
-                <span className="font-mono">
+                <span className="font-mono text-[11px] shrink-0">
                   {currentTopic.date.split('-').reverse().join('/')} às{' '}
                   {currentTopic.startTime.slice(0, 5)}
                 </span>
               </div>
               <h2 className="text-base md:text-lg font-bold tracking-tight truncate mt-0.5 flex items-center gap-2">
-                <span>{currentTopic.title}</span>
+                <span className="truncate">{currentTopic.title}</span>
                 <button
                   type="button"
                   onClick={() => {
                     setEditingTopic(currentTopic);
                     setEditTopicTitle(currentTopic.title);
                   }}
-                  className="text-slate-500 hover:text-indigo-400 cursor-pointer p-0.5 rounded transition"
+                  className="text-slate-500 hover:text-indigo-400 cursor-pointer p-1 rounded transition shrink-0"
                   title="Editar Título da Aula"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -1481,10 +1484,10 @@ export default function App() {
               </h2>
             </div>
 
-            {/* Right: Clean Filter Tabs + Secondary Options Menu */}
-            <div className="flex items-center gap-2">
+            {/* Right: Clean Filter Tabs (touch swipeable on mobile) + Options Menu */}
+            <div className="flex items-center gap-2 max-w-full min-w-0">
               <div
-                className={`flex items-center p-1 rounded-xl border text-xs ${
+                className={`flex items-center p-1 rounded-xl border text-xs overflow-x-auto no-scrollbar shrink min-w-0 ${
                   lightMode
                     ? 'bg-slate-100 border-slate-200'
                     : 'bg-slate-900 border-slate-800'
@@ -1493,7 +1496,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setFilterType('all')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
                     filterType === 'all'
                       ? 'bg-indigo-600 text-white'
                       : 'text-slate-400 hover:text-slate-200'
@@ -1504,7 +1507,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setFilterType('photo')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
                     filterType === 'photo'
                       ? 'bg-indigo-600 text-white'
                       : 'text-slate-400 hover:text-slate-200'
@@ -1515,7 +1518,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setFilterType('audio')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
                     filterType === 'audio'
                       ? 'bg-indigo-600 text-white'
                       : 'text-slate-400 hover:text-slate-200'
@@ -1526,19 +1529,19 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setFilterType('exam')}
-                  className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${
                     filterType === 'exam'
                       ? 'bg-amber-500 text-slate-950 font-semibold'
                       : 'text-slate-400 hover:text-amber-300'
                   }`}
                 >
                   <Star className="w-3 h-3" />
-                  <span className="hidden sm:inline">Importantes</span> ({stats.exams})
+                  <span>Importantes</span> ({stats.exams})
                 </button>
               </div>
 
               {/* Options Menu */}
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowHeaderMenu((v) => !v)}
@@ -1660,11 +1663,11 @@ export default function App() {
         )}
 
         {/* Chronological Timeline */}
-        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6">
           <div className="max-w-3xl mx-auto">
             {filteredTimelineItems.length === 0 ? (
               <div
-                className={`rounded-2xl border border-dashed p-12 text-center my-8 ${
+                className={`rounded-2xl border border-dashed p-8 sm:p-12 text-center my-6 sm:my-8 ${
                   lightMode
                     ? 'border-slate-300 text-slate-500'
                     : 'border-slate-800 text-slate-400'
@@ -1679,7 +1682,7 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {filteredTimelineItems.map((item, idx) => {
                   const isEditing = editingItemId === item.id;
                   const isMenuOpen = openCardMenuId === item.id;
@@ -1688,10 +1691,10 @@ export default function App() {
                     <div
                       key={item.id}
                       id={`timeline-card-${item.id}`}
-                      className="flex gap-3 md:gap-4 items-start group"
+                      className="flex md:gap-4 items-start group w-full"
                     >
-                      {/* Left Column: Chronological Timestamp */}
-                      <div className="w-16 md:w-20 shrink-0 pt-3 text-right select-none">
+                      {/* Left Column: Chronological Timestamp (Desktop only) */}
+                      <div className="hidden md:block w-16 md:w-20 shrink-0 pt-3 text-right select-none">
                         <div className="font-mono text-xs font-semibold text-indigo-400">
                           {item.timeLabel}
                         </div>
@@ -1700,8 +1703,8 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Vertical Timeline Line + Dot */}
-                      <div className="flex flex-col items-center self-stretch pt-4">
+                      {/* Vertical Timeline Line + Dot (Desktop only) */}
+                      <div className="hidden md:flex flex-col items-center self-stretch pt-4">
                         <div
                           className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                             item.type === 'photo'
@@ -1714,9 +1717,9 @@ export default function App() {
                         <div className="w-px flex-1 bg-slate-800/80 my-1" />
                       </div>
 
-                      {/* Right Column: Card */}
+                      {/* Right Column / Full Mobile Card */}
                       <div
-                        className={`flex-1 min-w-0 rounded-2xl border p-4 transition ${
+                        className={`w-full flex-1 min-w-0 rounded-xl sm:rounded-2xl border p-3.5 sm:p-4 transition ${
                           item.importantForExam
                             ? lightMode
                               ? 'bg-amber-50/60 border-amber-300'
@@ -1728,16 +1731,23 @@ export default function App() {
                       >
                         {/* Minimal Card Top Row */}
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            {/* Mobile Timestamp Badge */}
+                            <div className="md:hidden flex items-center gap-1.5 shrink-0">
+                              <span className="font-mono text-[11px] font-bold text-indigo-400 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 rounded-md">
+                                #{String(idx + 1).padStart(2, '0')} • {item.timeLabel}
+                              </span>
+                            </div>
+
+                            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 truncate">
                               {item.type === 'photo' ? (
-                                <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                                <ImageIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                               ) : item.type === 'audio' ? (
-                                <Mic className="w-3.5 h-3.5 text-emerald-400" />
+                                <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                               ) : (
-                                <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                                <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                               )}
-                              <span>
+                              <span className="truncate">
                                 {item.title ||
                                   (item.type === 'photo'
                                     ? 'Foto'
@@ -1751,7 +1761,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => handleSeekToLectureAudio(item)}
-                                className="px-2 py-0.5 rounded-md bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-[11px] font-mono flex items-center gap-1 transition cursor-pointer"
+                                className="px-2 py-0.5 rounded-md bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-[11px] font-mono flex items-center gap-1 transition cursor-pointer shrink-0"
                                 title="Ouvir este momento no áudio da aula"
                               >
                                 <Headphones className="w-3 h-3" />
@@ -1765,10 +1775,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => toggleExamStar(item)}
-                              className={`p-1 rounded-lg transition cursor-pointer ${
+                              className={`p-1.5 sm:p-1 rounded-lg transition cursor-pointer ${
                                 item.importantForExam
                                   ? 'text-amber-400'
-                                  : 'text-slate-500 opacity-0 group-hover:opacity-100 hover:text-amber-300'
+                                  : 'text-slate-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-amber-300'
                               }`}
                               title="Destacar como importante"
                             >
@@ -1785,7 +1795,7 @@ export default function App() {
                                 onClick={() =>
                                   setOpenCardMenuId(isMenuOpen ? null : item.id)
                                 }
-                                className="p-1 rounded-lg text-slate-500 opacity-0 group-hover:opacity-100 hover:text-slate-200 transition cursor-pointer"
+                                className="p-1.5 sm:p-1 rounded-lg text-slate-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-slate-200 transition cursor-pointer"
                               >
                                 <MoreHorizontal className="w-4 h-4" />
                               </button>
@@ -1960,19 +1970,19 @@ export default function App() {
           </div>
         </div>
 
-        {/* Sleek Unified Bottom Capture Bar */}
+        {/* Sleek Unified Bottom Capture Bar (Fixed thumb-friendly dock on mobile) */}
         {currentTopic && (
-          <div className="px-4 md:px-8 pb-4 pt-2 shrink-0">
+          <div className="px-3 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shrink-0 bg-slate-950/90 backdrop-blur-md md:bg-transparent border-t border-slate-800/80 md:border-none">
             <div className="max-w-3xl mx-auto">
               {isRecording && (
-                <div className="mb-2 px-4 py-2.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 flex items-center justify-between gap-3 shadow-lg">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                <div className="mb-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 flex items-center justify-between gap-2 sm:gap-3 shadow-lg">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
-                    <span className="font-mono text-xs font-bold text-white">
+                    <span className="font-mono text-xs font-bold text-white shrink-0">
                       {formatDuration(recordingSeconds)}
                     </span>
-                    <div className="flex items-center gap-0.5 h-5">
-                      {liveWaveform.map((v, i) => (
+                    <div className="flex items-center gap-0.5 h-5 shrink-0">
+                      {liveWaveform.slice(0, 10).map((v, i) => (
                         <div
                           key={i}
                           style={{ height: `${Math.max(20, Math.round(v * 100))}%` }}
@@ -1987,7 +1997,7 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={togglePauseRecording}
@@ -2003,10 +2013,10 @@ export default function App() {
                     <button
                       type="button"
                       onClick={stopAndSaveRecording}
-                      className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>Salvar Áudio</span>
+                      <span className="hidden xs:inline">Salvar</span>
                     </button>
                     <button
                       type="button"
@@ -2022,7 +2032,7 @@ export default function App() {
 
               <form
                 onSubmit={handleAddTextNote}
-                className={`flex items-center gap-2 rounded-2xl border p-2 shadow-lg ${
+                className={`flex items-center gap-1 sm:gap-2 rounded-2xl border p-1.5 sm:p-2 shadow-lg ${
                   lightMode
                     ? 'bg-white border-slate-200'
                     : 'bg-slate-900 border-slate-800'
@@ -2040,7 +2050,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowCameraModal(true)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer"
+                  className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer shrink-0"
                   title="Câmera"
                 >
                   <Camera className="w-5 h-5" />
@@ -2049,7 +2059,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer"
+                  className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer shrink-0"
                   title="Adicionar Foto da Galeria"
                 >
                   <ImageIcon className="w-5 h-5" />
@@ -2058,7 +2068,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={isRecording ? stopAndSaveRecording : startAudioRecording}
-                  className={`p-2 rounded-xl transition cursor-pointer ${
+                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
                     isRecording
                       ? 'bg-rose-600 text-white animate-pulse'
                       : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/60'
@@ -2076,14 +2086,14 @@ export default function App() {
                   type="text"
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="Escreva uma nota ou cole uma foto (Ctrl+V)..."
-                  className="flex-1 bg-transparent px-2 py-1.5 text-sm focus:outline-none"
+                  placeholder="Escreva uma anotação..."
+                  className="flex-1 min-w-0 bg-transparent px-1.5 sm:px-2 py-1.5 text-xs sm:text-sm focus:outline-none"
                 />
 
                 <button
                   type="button"
                   onClick={() => setMarkImportant((v) => !v)}
-                  className={`p-2 rounded-xl transition cursor-pointer ${
+                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
                     markImportant
                       ? 'text-amber-400 bg-amber-500/15'
                       : 'text-slate-500 hover:text-amber-300'
@@ -2098,7 +2108,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={!noteText.trim()}
-                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition cursor-pointer"
+                  className="p-2 sm:p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition cursor-pointer shrink-0"
                   title="Enviar anotação"
                 >
                   <Send className="w-4 h-4" />
@@ -2111,8 +2121,9 @@ export default function App() {
 
       {/* Modal: Edit Course */}
       {editingCourse && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-indigo-400" />
@@ -2172,8 +2183,9 @@ export default function App() {
 
       {/* Modal: Edit Subject */}
       {editingSubject && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-indigo-400" />
@@ -2254,8 +2266,9 @@ export default function App() {
 
       {/* Modal: Edit Topic / Aula */}
       {editingTopic && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-indigo-400" />
@@ -2304,8 +2317,9 @@ export default function App() {
 
       {/* Modal: New Course */}
       {showNewCourseModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <GraduationCap className="w-4 h-4 text-indigo-400" />
@@ -2367,8 +2381,9 @@ export default function App() {
 
       {/* Modal: New Subject (Directly linked to Course) */}
       {showNewSubjectModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white">Nova Matéria</h3>
               <button
@@ -2452,8 +2467,9 @@ export default function App() {
 
       {/* Modal: New Topic / Aula */}
       {showNewTopicModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-white">
                 Nova Aula em {currentSubject?.name}

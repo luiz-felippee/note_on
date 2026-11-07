@@ -142,32 +142,33 @@ export const FirebaseCloudModal: React.FC<FirebaseCloudModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl my-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/60">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400">
+    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+      <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl max-h-[92vh] flex flex-col">
+        <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mt-2.5 sm:hidden" />
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-slate-800 bg-slate-900/60 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 shrink-0">
               <Cloud className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-base font-bold text-white">
-                Sincronização Híbrida (Dispositivo + Firebase Cloud)
+            <div className="truncate">
+              <h3 className="text-sm sm:text-base font-bold text-white truncate">
+                Nuvem Firebase
               </h3>
-              <p className="text-xs text-slate-400">
-                Salva offline no IndexedDB instantaneamente e sincroniza na nuvem
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                Sincronização offline-first e backup em nuvem
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[82vh] overflow-y-auto">
+        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
           {/* Local Storage Status Banner */}
           <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 p-3.5 flex items-center justify-between">
             <div className="flex items-center gap-3">
