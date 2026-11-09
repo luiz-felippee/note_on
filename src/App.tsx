@@ -33,6 +33,7 @@ import {
   Sparkles,
   Smartphone,
   Bell,
+  HelpCircle,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -42,6 +43,7 @@ import {
   TimelineItem,
   TimelineItemType,
   PhotoHighlightStroke,
+  StudyQuestion,
 } from './types';
 import {
   calculateSM2Review,
@@ -62,6 +64,10 @@ import {
   getAllItems,
   saveTimelineItem,
   deleteTimelineItem,
+  getAllQuestions,
+  saveQuestion,
+  saveQuestionsBatch,
+  deleteQuestion,
   subscribeToAuth,
   exportFullBackupJson,
   importFullBackupJson,
@@ -72,6 +78,8 @@ import { CameraModal } from './components/CameraModal';
 import { FirebaseCloudModal } from './components/FirebaseCloudModal';
 import { ExamFlashcardsModal } from './components/ExamFlashcardsModal';
 import { BoardCarouselModal } from './components/BoardCarouselModal';
+import { TopicQuestionsView } from './components/TopicQuestionsView';
+import { generateQuestionsFromTranscript } from './services/questionGeneratorService';
 
 const SUBJECT_COLORS = [
   '#6366f1', // Indigo
@@ -88,6 +96,8 @@ export default function App() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<StudyTopic[]>([]);
   const [allItems, setAllItems] = useState<TimelineItem[]>([]);
+  const [allQuestions, setAllQuestions] = useState<StudyQuestion[]>([]);
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
 
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
@@ -96,7 +106,9 @@ export default function App() {
   // UI State
   const [lightMode, setLightMode] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [filterType, setFilterType] = useState<'all' | TimelineItemType | 'exam'>('all');
+  const [filterType, setFilterType] = useState<
+    'all' | TimelineItemType | 'exam' | 'questions'
+  >('all');
   const [globalSearch, setGlobalSearch] = useState('');
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showCourseDropdown, setShowCourseDropdown] = useState(false);
@@ -251,16 +263,18 @@ export default function App() {
 
   const reloadAllData = async () => {
     await ensureInitialSeedData();
-    const [crs, subjs, tps, itms] = await Promise.all([
+    const [crs, subjs, tps, itms, qsts] = await Promise.all([
       getAllCourses(),
       getAllSubjects(),
       getAllTopics(),
       getAllItems(),
+      getAllQuestions(),
     ]);
     setCourses(crs);
     setSubjects(subjs);
     setTopics(tps);
     setAllItems(itms);
+    setAllQuestions(qsts);
 
     setSelectedCourseId((prev) =>
       prev && crs.some((c) => c.id === prev) ? prev : crs[0]?.id || null
@@ -386,12 +400,97 @@ export default function App() {
 
     if (filterType === 'exam') {
       base = base.filter((i) => i.importantForExam);
-    } else if (filterType !== 'all') {
+    } else if (filterType !== 'all' && filterType !== 'questions') {
       base = base.filter((i) => i.type === filterType);
     }
 
     return base;
   }, [allItems, currentTopicItems, filterType, globalSearch]);
+
+  // Questions Memoized for Current Topic
+  const currentTopicQuestions = useMemo(() => {
+    return allQuestions
+      .filter((q) => q.topicId === selectedTopicId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [allQuestions, selectedTopicId]);
+
+  const topicAudiosWithTranscript = useMemo(() => {
+    return currentTopicItems.filter(
+      (i) => i.type === 'audio' && i.transcript && i.transcript.trim().length > 15
+    );
+  }, [currentTopicItems]);
+
+  const generateQuestionsAndSave = async (params: {
+    transcript: string;
+    topicTitle: string;
+    subjectName: string;
+    audioItemId?: string;
+    topicId: string;
+    subjectId: string;
+    courseId?: string;
+  }) => {
+    setIsGeneratingQuestions(true);
+    try {
+      const generated = await generateQuestionsFromTranscript(params);
+      if (generated && generated.length > 0) {
+        await saveQuestionsBatch(generated);
+        setAllQuestions((prev) => [...prev, ...generated]);
+        return generated;
+      }
+    } catch (err: any) {
+      console.warn('Erro ao gerar questões:', err);
+    } finally {
+      setIsGeneratingQuestions(false);
+    }
+    return [];
+  };
+
+  const handleGenerateQuestionsForCurrentTopic = async () => {
+    if (!selectedTopicId || !selectedSubjectId) return;
+    const audios = topicAudiosWithTranscript;
+    if (audios.length === 0) return;
+
+    const combinedTranscript = audios.map((a) => a.transcript).join('\n\n');
+    const questions = await generateQuestionsAndSave({
+      transcript: combinedTranscript,
+      topicTitle: currentTopic?.title || 'Aula',
+      subjectName: currentSubject?.name || 'Disciplina',
+      topicId: selectedTopicId,
+      subjectId: selectedSubjectId,
+      courseId: selectedCourseId || undefined,
+    });
+    if (questions.length > 0) {
+      setFilterType('questions');
+    }
+  };
+
+  const handleGenerateQuestionsForSingleAudio = async (item: TimelineItem) => {
+    if (!item.transcript) return;
+    const questions = await generateQuestionsAndSave({
+      transcript: item.transcript,
+      topicTitle: currentTopic?.title || 'Aula',
+      subjectName: currentSubject?.name || 'Disciplina',
+      audioItemId: item.id,
+      topicId: item.topicId,
+      subjectId: item.subjectId,
+      courseId: item.courseId,
+    });
+    if (questions.length > 0) {
+      setFilterType('questions');
+    }
+  };
+
+  const handleUpdateQuestion = async (updated: StudyQuestion) => {
+    setAllQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+    await saveQuestion(updated);
+  };
+
+  const handleDeleteQuestion = (questionId: string) => {
+    requestConfirm('Excluir Questão', 'Deseja realmente excluir esta questão de estudo?', async () => {
+      setAllQuestions((prev) => prev.filter((q) => q.id !== questionId));
+      await deleteQuestion(questionId);
+    });
+  };
 
   const formatDuration = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -699,6 +798,24 @@ export default function App() {
           audioWaveform: sampledBars,
         });
         setNoteText('');
+
+        // Auto-generate questions on the fly from the teacher speech transcription!
+        if (
+          transcriptToSave &&
+          transcriptToSave.trim().length > 15 &&
+          selectedTopicId &&
+          selectedSubjectId
+        ) {
+          generateQuestionsAndSave({
+            transcript: transcriptToSave.trim(),
+            topicTitle: currentTopic?.title || 'Aula',
+            subjectName: currentSubject?.name || 'Disciplina',
+            audioItemId: plannedId,
+            topicId: selectedTopicId,
+            subjectId: selectedSubjectId,
+            courseId: selectedCourseId || undefined,
+          });
+        }
       };
       reader.readAsDataURL(blob);
 
@@ -1691,6 +1808,32 @@ export default function App() {
                   <Star className="w-3 h-3" />
                   <span>Importantes</span> ({stats.exams})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('questions')}
+                  className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                    filterType === 'questions'
+                      ? 'bg-purple-600 text-white font-semibold shadow-sm'
+                      : currentTopicQuestions.length > 0
+                      ? 'text-purple-300 hover:text-purple-200 bg-purple-500/20 hover:bg-purple-500/30 ring-1 ring-purple-500/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Questões de fixação geradas da transcrição da aula"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  <span>Questões</span>
+                  <span
+                    className={`px-1.5 py-0.2 text-[10px] rounded-full font-bold ${
+                      filterType === 'questions'
+                        ? 'bg-purple-800 text-white'
+                        : currentTopicQuestions.length > 0
+                        ? 'bg-purple-500/40 text-purple-200'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {currentTopicQuestions.length}
+                  </span>
+                </button>
               </div>
 
               {/* SM-2 Spaced Repetition Due Today Action */}
@@ -1861,10 +2004,58 @@ export default function App() {
           </div>
         )}
 
-        {/* Chronological Timeline */}
+        {/* Chronological Timeline or Topic Questions View */}
         <div className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6">
           <div className="max-w-3xl mx-auto">
-            {filteredTimelineItems.length === 0 ? (
+            {/* Prominent Questions Banner when questions exist and user is in another tab */}
+            {currentTopicQuestions.length > 0 && filterType !== 'questions' && (
+              <div
+                onClick={() => setFilterType('questions')}
+                className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-purple-950/40 via-purple-900/30 to-indigo-950/40 border border-purple-800/50 hover:border-purple-600/80 transition cursor-pointer flex items-center justify-between gap-3 group shadow-sm"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="p-1.5 rounded-xl bg-purple-500/20 text-purple-300 group-hover:scale-105 transition">
+                    <HelpCircle className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold text-purple-200">
+                      Esta aula possui {currentTopicQuestions.length}{' '}
+                      {currentTopicQuestions.length === 1
+                        ? 'questão gerada'
+                        : 'questões geradas'}{' '}
+                      da fala do professor!
+                    </p>
+                    <p className="text-[11px] text-purple-400/80">
+                      Clique para testar e fixar o conteúdo agora
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium shrink-0 transition shadow">
+                  Ver Questões →
+                </span>
+              </div>
+            )}
+
+            {filterType === 'questions' ? (
+              <TopicQuestionsView
+                questions={currentTopicQuestions}
+                topicTitle={currentTopic?.title || 'Aula'}
+                subjectName={currentSubject?.name || 'Disciplina'}
+                lightMode={lightMode}
+                isGenerating={isGeneratingQuestions}
+                hasAudioTranscripts={topicAudiosWithTranscript.length > 0}
+                onGenerateFromAudios={handleGenerateQuestionsForCurrentTopic}
+                onUpdateQuestion={handleUpdateQuestion}
+                onDeleteQuestion={handleDeleteQuestion}
+                onJumpToAudio={(audioId) => {
+                  setFilterType('all');
+                  setTimeout(() => {
+                    const el = document.getElementById(`timeline-card-${audioId}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 150);
+                }}
+              />
+            ) : filteredTimelineItems.length === 0 ? (
               <div
                 className={`rounded-2xl border border-dashed p-8 sm:p-12 text-center my-6 sm:my-8 ${
                   lightMode
@@ -2115,6 +2306,11 @@ export default function App() {
                                       triggerId: audioSeekTarget.triggerId,
                                     }
                                   : null
+                              }
+                              onGenerateQuestions={
+                                item.transcript && item.transcript.trim().length > 15
+                                  ? () => handleGenerateQuestionsForSingleAudio(item)
+                                  : undefined
                               }
                             />
                           </div>

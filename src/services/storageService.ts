@@ -27,10 +27,10 @@ import {
   uploadString,
   getDownloadURL,
 } from 'firebase/storage';
-import { Course, Subject, StudyTopic, TimelineItem, FirebaseConfigData } from '../types';
+import { Course, Subject, StudyTopic, TimelineItem, FirebaseConfigData, StudyQuestion } from '../types';
 
 const DB_NAME = 'noteon_study_db';
-const DB_VERSION = 2; // Upgraded for Course store
+const DB_VERSION = 3; // Upgraded for questions store
 const FB_CONFIG_STORAGE_KEY = 'noteon_firebase_config_v1';
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
@@ -59,6 +59,11 @@ function getLocalDB() {
           const itemStore = db.createObjectStore('items', { keyPath: 'id' });
           itemStore.createIndex('by-topic', 'topicId');
           itemStore.createIndex('by-subject', 'subjectId');
+        }
+        if (!db.objectStoreNames.contains('questions')) {
+          const qStore = db.createObjectStore('questions', { keyPath: 'id' });
+          qStore.createIndex('by-topic', 'topicId');
+          qStore.createIndex('by-subject', 'subjectId');
         }
       },
     });
@@ -613,6 +618,62 @@ export async function deleteTimelineItem(itemId: string): Promise<void> {
   }
 }
 
+export async function getQuestionsByTopic(topicId: string): Promise<StudyQuestion[]> {
+  const db = await getLocalDB();
+  const tx = db.transaction('questions', 'readonly');
+  const index = tx.store.index('by-topic');
+  return index.getAll(topicId);
+}
+
+export async function getAllQuestions(): Promise<StudyQuestion[]> {
+  const db = await getLocalDB();
+  return db.getAll('questions');
+}
+
+export async function saveQuestion(question: StudyQuestion): Promise<StudyQuestion> {
+  const db = await getLocalDB();
+  await db.put('questions', question);
+  if (currentUser && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', question.id), question);
+    } catch (e) {
+      console.warn('Erro ao salvar questão na nuvem:', e);
+    }
+  }
+  return question;
+}
+
+export async function saveQuestionsBatch(questions: StudyQuestion[]): Promise<StudyQuestion[]> {
+  const db = await getLocalDB();
+  const tx = db.transaction('questions', 'readwrite');
+  for (const q of questions) {
+    await tx.store.put(q);
+  }
+  await tx.done;
+  if (currentUser && firestoreDb) {
+    for (const q of questions) {
+      try {
+        await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', q.id), q);
+      } catch (e) {
+        // continue
+      }
+    }
+  }
+  return questions;
+}
+
+export async function deleteQuestion(questionId: string): Promise<void> {
+  const db = await getLocalDB();
+  await db.delete('questions', questionId);
+  if (currentUser && firestoreDb) {
+    try {
+      await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', questionId));
+    } catch (e) {
+      console.warn('Erro ao remover questão na nuvem:', e);
+    }
+  }
+}
+
 export async function syncAllFromAndToCloud(): Promise<{
   pushed: number;
   pulled: number;
@@ -659,6 +720,15 @@ export async function syncAllFromAndToCloud(): Promise<{
       pulled++;
     }
 
+    const cloudQuestionSnap = await getDocs(
+      collection(firestoreDb, 'users', currentUser.uid, 'questions')
+    );
+    for (const d of cloudQuestionSnap.docs) {
+      const data = d.data() as StudyQuestion;
+      await db.put('questions', data);
+      pulled++;
+    }
+
     const localCourses = await db.getAll('courses');
     for (const c of localCourses) {
       await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'courses', c.id), c);
@@ -684,6 +754,12 @@ export async function syncAllFromAndToCloud(): Promise<{
         pushed++;
       }
     }
+
+    const localQuestions: StudyQuestion[] = await db.getAll('questions');
+    for (const q of localQuestions) {
+      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', q.id), q);
+      pushed++;
+    }
   } catch (err) {
     console.warn('Erro durante sincronização completa:', err);
   }
@@ -694,20 +770,22 @@ export async function syncAllFromAndToCloud(): Promise<{
 // 1-Click Full Backup Export & Import (.json)
 export async function exportFullBackupJson(): Promise<string> {
   const db = await getLocalDB();
-  const [courses, subjects, topics, items] = await Promise.all([
+  const [courses, subjects, topics, items, questions] = await Promise.all([
     db.getAll('courses'),
     db.getAll('subjects'),
     db.getAll('topics'),
     db.getAll('items'),
+    db.getAll('questions'),
   ]);
   const payload = {
     app: 'NoteOn',
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     courses,
     subjects,
     topics,
     items,
+    questions,
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -717,6 +795,7 @@ export async function importFullBackupJson(jsonContent: string): Promise<{
   subjects: number;
   topics: number;
   items: number;
+  questions: number;
 }> {
   const parsed = JSON.parse(jsonContent);
   if (!parsed || !Array.isArray(parsed.subjects) || !Array.isArray(parsed.items)) {
@@ -735,10 +814,14 @@ export async function importFullBackupJson(jsonContent: string): Promise<{
   for (const i of parsed.items) {
     await db.put('items', i);
   }
+  for (const q of parsed.questions || []) {
+    await db.put('questions', q);
+  }
   return {
     courses: (parsed.courses || []).length,
     subjects: parsed.subjects.length,
     topics: (parsed.topics || []).length,
     items: parsed.items.length,
+    questions: (parsed.questions || []).length,
   };
 }

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Download } from 'lucide-react';
+import { Play, Pause, Download, Sparkles } from 'lucide-react';
 import { AudioMomentMarker } from '../types';
 
 interface AudioPlayerCardProps {
@@ -11,6 +11,7 @@ interface AudioPlayerCardProps {
   transcript?: string;
   markers?: AudioMomentMarker[];
   seekRequest?: { timeSeconds: number; triggerId: number } | null;
+  onGenerateQuestions?: () => void;
 }
 
 const DEFAULT_WAVEFORM = [
@@ -27,6 +28,7 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
   transcript,
   markers = [],
   seekRequest,
+  onGenerateQuestions,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -236,13 +238,26 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
           </div>
 
           {transcript && (
-            <button
-              type="button"
-              onClick={() => setShowTranscript((v) => !v)}
-              className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
-            >
-              {showTranscript ? 'Ocultar transcrição' : 'Ver transcrição da fala'}
-            </button>
+            <div className="flex items-center gap-2">
+              {onGenerateQuestions && (
+                <button
+                  type="button"
+                  onClick={onGenerateQuestions}
+                  className="text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 cursor-pointer bg-purple-500/10 hover:bg-purple-500/20 px-2 py-0.5 rounded-md border border-purple-500/30 transition"
+                  title="Gerar perguntas sobre este áudio"
+                >
+                  <Sparkles className="w-3 h-3 text-purple-400" />
+                  <span>Gerar Questões</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowTranscript((v) => !v)}
+                className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+              >
+                {showTranscript ? 'Ocultar transcrição' : 'Ver transcrição da fala'}
+              </button>
+            </div>
           )}
         </div>
       )}

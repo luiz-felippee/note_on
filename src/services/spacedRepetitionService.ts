@@ -161,3 +161,4 @@ export function formatSM2IntervalDays(days: number): string {
   const months = Math.round(days / 30);
   return `${months}m`;
 }
+

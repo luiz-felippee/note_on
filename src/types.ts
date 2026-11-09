@@ -91,6 +91,27 @@ export interface TimelineItem {
   syncStatus?: 'local' | 'syncing' | 'synced';
 }
 
+export type QuestionType = 'multiple_choice' | 'discursive';
+
+export interface StudyQuestion {
+  id: string;
+  topicId: string;
+  subjectId: string;
+  courseId?: string;
+  audioItemId?: string;
+  type: QuestionType;
+  prompt: string;
+  options?: string[];
+  correctOptionIndex?: number;
+  explanation: string;
+  teacherQuoteSnippet?: string;
+  userSelectedOption?: number;
+  userRevealedDiscursive?: boolean;
+  userNotes?: string;
+  createdAt: number;
+  importantForExam?: boolean;
+}
+
 export interface FirebaseConfigData {
   apiKey: string;
   authDomain: string;
