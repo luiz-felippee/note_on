@@ -47,3 +47,4 @@ chrome.storage.local.get(['pendingCaptures'], (result) => {
     chrome.storage.local.set({ pendingCaptures: [] });
   }
 });
+

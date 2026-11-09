@@ -11,7 +11,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     body {
-      width: 280px;
+      width: 290px;
       padding: 16px;
       background: #090d16;
       color: #f1f5f9;
@@ -55,41 +55,49 @@
       line-height: 1.4;
       margin-bottom: 14px;
     }
-    .btn-capture {
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .btn-primary {
       width: 100%;
-      padding: 12px;
+      padding: 11px;
       background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
       color: #ffffff;
       border: none;
       border-radius: 12px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
+      justify-content: space-between;
       box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
       transition: all 0.15s ease;
     }
-    .btn-capture:hover {
+    .btn-primary:hover {
       background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
       transform: translateY(-1px);
     }
-    .btn-capture:active {
-      transform: translateY(1px);
-    }
-    .shortcut-box {
-      margin-top: 12px;
-      padding: 8px 10px;
+    .btn-secondary {
+      width: 100%;
+      padding: 9px 11px;
       background: #1e293b;
-      border-radius: 8px;
-      font-size: 11px;
       color: #cbd5e1;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border: 1px solid #334155;
+      transition: all 0.15s ease;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      color: #ffffff;
     }
     .kbd {
       background: #0f172a;
@@ -127,20 +135,23 @@
   </div>
 
   <p class="desc">
-    Tire print do slide, Meet, Zoom ou vídeo e envie direto para o áudio em gravação.
+    Selecione a área exata do slide ou capture a tela inteira direto para o áudio em gravação.
   </p>
 
-  <button id="btnCapture" class="btn-capture">
-    📸 Tirar Print Desta Aba
-  </button>
+  <div class="btn-group">
+    <button id="btnSnipArea" class="btn-primary">
+      <span>📐 Marcar Área (Recorte)</span>
+      <span class="kbd">Alt + S</span>
+    </button>
 
-  <div class="shortcut-box">
-    <span>Atalho de Teclado:</span>
-    <span class="kbd">Alt + S</span>
+    <button id="btnCaptureFull" class="btn-secondary">
+      <span>🖥️ Print da Tela Inteira</span>
+      <span class="kbd">Alt + Shift + S</span>
+    </button>
   </div>
 
   <div id="toast" class="toast-msg toast-success">
-    ✓ Print enviado para o NoteOn!
+    ✓ Comando enviado!
   </div>
 
   <script src="popup.js"></script>

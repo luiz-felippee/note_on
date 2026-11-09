@@ -146,14 +146,18 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
           >
             <div className="flex items-center gap-1.5 font-bold text-slate-200 mb-2">
               <Puzzle className="w-4 h-4 text-indigo-400" />
-              <span>Opção 2: Plugin do Navegador (Extensão Oficial)</span>
+              <span>Opção 2: Plugin do Navegador (Marcar Área em Outras Páginas)</span>
             </div>
             <p className="text-slate-400 text-xs mb-3">
-              Permite tirar print de <strong>qualquer aba</strong> pressionando{' '}
+              Permite marcar com o mouse e recortar a área exata do slide em <strong>qualquer página</strong> da web (YouTube, Meet, PDF, Slides) pressionando{' '}
               <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-indigo-300 font-mono">
                 Alt + S
               </kbd>
-              , enviando a imagem imediatamente para a gravação de áudio no NoteOn no segundo exato!
+              {' '}ou salvar a tela inteira com{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-indigo-300 font-mono">
+                Alt + Shift + S
+              </kbd>
+              .
             </p>
 
             <div className="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
@@ -218,3 +222,4 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
     </div>
   );
 };
+

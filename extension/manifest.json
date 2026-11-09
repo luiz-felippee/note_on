@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NoteOn - Captura de Slides e Telas da Aula",
-  "version": "1.0.0",
-  "description": "Tira print da aula (Meet, Zoom, Slides, YouTube) e salva automaticamente no NoteOn sincronizado com o áudio gravado.",
+  "name": "NoteOn - Captura e Recorte de Slides",
+  "version": "1.1.0",
+  "description": "Marque a área do slide ou tire print da aula (Meet, Zoom, Slides, YouTube, PDF) e salve automaticamente no NoteOn sincronizado com o áudio gravado.",
   "permissions": [
     "activeTab",
     "tabs",
@@ -14,7 +14,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "NoteOn - Capturar Slide da Aula (Alt+S)"
+    "default_title": "NoteOn - Marcar Área ou Print (Alt+S)"
   },
   "background": {
     "service_worker": "background.js"
@@ -32,12 +32,19 @@
     }
   ],
   "commands": {
-    "capture-slide": {
+    "capture-area": {
       "suggested_key": {
         "default": "Alt+S",
         "mac": "Alt+S"
       },
-      "description": "Tirar print da aba ativa e salvar no NoteOn"
+      "description": "Marcar área da tela (recorte) e salvar no NoteOn"
+    },
+    "capture-full": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
+      "description": "Tirar print da tela inteira e salvar no NoteOn"
     }
   }
 }

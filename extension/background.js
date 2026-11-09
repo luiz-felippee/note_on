@@ -1,13 +1,5 @@
 // NoteOn Chrome Extension - Background Service Worker
 
-// Allowed match patterns for NoteOn tabs
-const NOTEON_URL_PATTERNS = [
-  'http://localhost/*',
-  'http://127.0.0.1/*',
-  'https://*.vercel.app/*',
-  'https://*.noteon.app/*'
-];
-
 // Helper to find an active NoteOn tab
 async function findNoteOnTabs() {
   const allTabs = await chrome.tabs.query({});
@@ -22,84 +14,136 @@ async function findNoteOnTabs() {
   });
 }
 
-// Capture current screen and send to NoteOn
-async function captureAndSendToNoteOn(activeTab) {
-  try {
-    // 1. Capture current visible tab
-    const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
-    const pageTitle = (activeTab && activeTab.title) ? activeTab.title : 'Slide da Aula';
+// Forward screenshot dataUrl to NoteOn
+async function forwardToNoteOn(dataUrl, pageTitle) {
+  const noteOnTabs = await findNoteOnTabs();
 
-    // 2. Find NoteOn tabs
-    const noteOnTabs = await findNoteOnTabs();
+  if (noteOnTabs.length > 0) {
+    const targetTab = noteOnTabs[0];
 
-    if (noteOnTabs.length > 0) {
-      // Send to the first active or recent NoteOn tab
-      const targetTab = noteOnTabs[0];
-
-      chrome.tabs.sendMessage(
-        targetTab.id,
-        {
-          type: 'NOTEON_EXTENSION_CAPTURE',
-          dataUrl,
-          pageTitle,
-          capturedAt: Date.now()
-        },
-        () => {
-          if (chrome.runtime.lastError) {
-            console.log('Tentativa de envio via sendMessage:', chrome.runtime.lastError.message);
-          }
-        }
-      );
-
-      // Show OK badge on icon
-      chrome.action.setBadgeText({ text: '✓' });
-      chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
-      setTimeout(() => {
-        chrome.action.setBadgeText({ text: '' });
-      }, 2500);
-
-      return { success: true, targetTabId: targetTab.id };
-    } else {
-      // Store in offline queue
-      const existingQueue = (await chrome.storage.local.get(['pendingCaptures'])).pendingCaptures || [];
-      existingQueue.push({
+    chrome.tabs.sendMessage(
+      targetTab.id,
+      {
+        type: 'NOTEON_EXTENSION_CAPTURE',
         dataUrl,
-        pageTitle,
+        pageTitle: pageTitle || 'Slide da Aula',
         capturedAt: Date.now()
-      });
-      await chrome.storage.local.set({ pendingCaptures: existingQueue });
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.log('Tentativa de envio sendMessage:', chrome.runtime.lastError.message);
+        }
+      }
+    );
 
-      chrome.action.setBadgeText({ text: '!' });
-      chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
-      setTimeout(() => {
-        chrome.action.setBadgeText({ text: '' });
-      }, 4000);
+    chrome.action.setBadgeText({ text: '✓' });
+    chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 2500);
 
-      return { success: false, reason: 'no_noteon_tab' };
-    }
+    return { success: true, targetTabId: targetTab.id };
+  } else {
+    // Save in queue
+    const existingQueue = (await chrome.storage.local.get(['pendingCaptures'])).pendingCaptures || [];
+    existingQueue.push({
+      dataUrl,
+      pageTitle: pageTitle || 'Slide da Aula',
+      capturedAt: Date.now()
+    });
+    await chrome.storage.local.set({ pendingCaptures: existingQueue });
+
+    chrome.action.setBadgeText({ text: '!' });
+    chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 4000);
+
+    return { success: false, reason: 'no_noteon_tab' };
+  }
+}
+
+// Inject snipper.js overlay on any active webpage
+async function triggerSnipperOnActiveTab(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['snipper.js']
+    });
+    return { success: true };
   } catch (err) {
-    console.error('Erro ao capturar tela no NoteOn Extension:', err);
+    console.error('Erro ao injetar snipper:', err);
+    // Fallback: capture full tab if script injection is blocked (e.g. chrome:// internal pages)
+    return captureFullActiveTab();
+  }
+}
+
+// Full Tab Capture
+async function captureFullActiveTab() {
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+    const pageTitle = activeTab?.title || 'Slide da Aula';
+    return await forwardToNoteOn(dataUrl, pageTitle);
+  } catch (err) {
+    console.error('Erro na captura total:', err);
     return { success: false, error: err.message };
   }
 }
 
-// Hotkey listener (Alt + S)
+// Hotkey listener
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === 'capture-slide') {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await captureAndSendToNoteOn(activeTab);
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!activeTab || !activeTab.id) return;
+
+  if (command === 'capture-area') {
+    await triggerSnipperOnActiveTab(activeTab.id);
+  } else if (command === 'capture-full') {
+    await captureFullActiveTab();
   }
 });
 
-// Message listener from popup
+// Message listener from popup and snipper.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'TRIGGER_CAPTURE') {
+  if (request.action === 'TRIGGER_SNIP_AREA') {
     (async () => {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const res = await captureAndSendToNoteOn(activeTab);
+      if (activeTab && activeTab.id) {
+        const res = await triggerSnipperOnActiveTab(activeTab.id);
+        sendResponse(res);
+      } else {
+        sendResponse({ success: false });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === 'CAPTURE_FULL_NOW') {
+    (async () => {
+      const res = await captureFullActiveTab();
       sendResponse(res);
     })();
-    return true; // Keep sendResponse async
+    return true;
+  }
+
+  if (request.action === 'GET_RAW_SCREENSHOT') {
+    (async () => {
+      try {
+        const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+        sendResponse({ success: true, dataUrl });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === 'DELIVER_CROPPED_CAPTURE') {
+    (async () => {
+      const res = await forwardToNoteOn(request.dataUrl, request.pageTitle);
+      sendResponse(res);
+    })();
+    return true;
   }
 
   if (request.action === 'CHECK_NOTEON_STATUS') {

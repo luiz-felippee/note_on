@@ -2,7 +2,8 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   const statusBadge = document.getElementById('statusBadge');
-  const btnCapture = document.getElementById('btnCapture');
+  const btnSnipArea = document.getElementById('btnSnipArea');
+  const btnCaptureFull = document.getElementById('btnCaptureFull');
   const toast = document.getElementById('toast');
 
   // Check if NoteOn is open
@@ -16,29 +17,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Capture button click
-  btnCapture.addEventListener('click', () => {
-    btnCapture.disabled = true;
-    btnCapture.textContent = 'Capturando...';
+  // Snip Area
+  btnSnipArea.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'TRIGGER_SNIP_AREA' }, () => {
+      window.close();
+    });
+  });
 
-    chrome.runtime.sendMessage({ action: 'TRIGGER_CAPTURE' }, (res) => {
-      btnCapture.disabled = false;
-      btnCapture.innerHTML = '📸 Tirar Print Desta Aba';
-
+  // Full Screen Capture
+  btnCaptureFull.addEventListener('click', () => {
+    btnCaptureFull.disabled = true;
+    chrome.runtime.sendMessage({ action: 'CAPTURE_FULL_NOW' }, (res) => {
+      btnCaptureFull.disabled = false;
       if (res && res.success) {
         toast.style.display = 'block';
         toast.textContent = '✓ Print enviado para o NoteOn!';
         toast.className = 'toast-msg toast-success';
-        setTimeout(() => {
-          window.close();
-        }, 1200);
-      } else if (res && res.reason === 'no_noteon_tab') {
-        toast.style.display = 'block';
-        toast.textContent = 'Salvo na fila! Abra o NoteOn.';
-        toast.className = 'toast-msg status-disconnected';
+        setTimeout(() => window.close(), 1000);
       } else {
         toast.style.display = 'block';
-        toast.textContent = 'Erro ao capturar aba.';
+        toast.textContent = 'Salvo na fila! Abra o NoteOn.';
         toast.className = 'toast-msg status-disconnected';
       }
     });
