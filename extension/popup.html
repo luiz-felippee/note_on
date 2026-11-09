@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>NoteOn - Captura de Slides</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body {
+      width: 280px;
+      padding: 16px;
+      background: #090d16;
+      color: #f1f5f9;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      color: #818cf8;
+    }
+    .status-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status-connected {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .status-disconnected {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .desc {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.4;
+      margin-bottom: 14px;
+    }
+    .btn-capture {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+      transition: all 0.15s ease;
+    }
+    .btn-capture:hover {
+      background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+      transform: translateY(-1px);
+    }
+    .btn-capture:active {
+      transform: translateY(1px);
+    }
+    .shortcut-box {
+      margin-top: 12px;
+      padding: 8px 10px;
+      background: #1e293b;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid #334155;
+    }
+    .kbd {
+      background: #0f172a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #475569;
+      font-family: monospace;
+      font-size: 10px;
+      font-weight: 700;
+      color: #a5b4fc;
+    }
+    .toast-msg {
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 11px;
+      text-align: center;
+      display: none;
+    }
+    .toast-success {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <span>🎓 NoteOn Print</span>
+    </div>
+    <div id="statusBadge" class="status-badge status-disconnected">
+      ● Verificando...
+    </div>
+  </div>
+
+  <p class="desc">
+    Tire print do slide, Meet, Zoom ou vídeo e envie direto para o áudio em gravação.
+  </p>
+
+  <button id="btnCapture" class="btn-capture">
+    📸 Tirar Print Desta Aba
+  </button>
+
+  <div class="shortcut-box">
+    <span>Atalho de Teclado:</span>
+    <span class="kbd">Alt + S</span>
+  </div>
+
+  <div id="toast" class="toast-msg toast-success">
+    ✓ Print enviado para o NoteOn!
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

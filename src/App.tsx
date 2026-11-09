@@ -34,6 +34,9 @@ import {
   Smartphone,
   Bell,
   HelpCircle,
+  Monitor,
+  Puzzle,
+  CheckCircle2,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -79,6 +82,7 @@ import { FirebaseCloudModal } from './components/FirebaseCloudModal';
 import { ExamFlashcardsModal } from './components/ExamFlashcardsModal';
 import { BoardCarouselModal } from './components/BoardCarouselModal';
 import { TopicQuestionsView } from './components/TopicQuestionsView';
+import { ExtensionPluginModal } from './components/ExtensionPluginModal';
 import { generateQuestionsFromTranscript } from './services/questionGeneratorService';
 
 const SUBJECT_COLORS = [
@@ -151,6 +155,32 @@ export default function App() {
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showFlashcardsModal, setShowFlashcardsModal] = useState(false);
   const [showCarouselModal, setShowCarouselModal] = useState(false);
+  const [showExtensionModal, setShowExtensionModal] = useState(false);
+  const [isExtensionDetected, setIsExtensionDetected] = useState(false);
+
+  // Native In-Browser Screen Share & Capture
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [isCapturingScreen, setIsCapturingScreen] = useState(false);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Discreet Toast Notification
+  const [toastInfo, setToastInfo] = useState<{
+    message: string;
+    type?: 'success' | 'info';
+    timestamp: number;
+  } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' = 'success') => {
+    setToastInfo({ message, type, timestamp: Date.now() });
+  };
+
+  useEffect(() => {
+    if (toastInfo) {
+      const timer = setTimeout(() => setToastInfo(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastInfo]);
+
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
 
   // Custom In-App Confirmation Modal (Replaces browser confirm() dialog)
@@ -636,6 +666,132 @@ export default function App() {
       triggerId: Date.now(),
     });
   };
+
+  // Screen Share & Snapshot Capture Functions
+  const handleStartScreenShare = async () => {
+    try {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        showToast('Seu navegador não suporta compartilhamento direto. Use a Extensão NoteOn!', 'info');
+        setShowExtensionModal(true);
+        return;
+      }
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      setScreenStream(stream);
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = stream;
+        screenVideoRef.current.play().catch(() => {});
+      }
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        track.onended = () => {
+          setScreenStream(null);
+        };
+      }
+      showToast('🖥️ Tela conectada! Você pode tirar prints com 1 clique ou Alt+S.');
+    } catch (err: any) {
+      if (err.name !== 'NotAllowedError') {
+        console.warn('Erro ao compartilhar tela:', err);
+      }
+    }
+  };
+
+  const handleStopScreenShare = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      setScreenStream(null);
+    }
+  };
+
+  const handleCaptureScreenSnapshot = async () => {
+    const video = screenVideoRef.current;
+    if (!video || !screenStream || video.videoWidth === 0) {
+      handleStartScreenShare();
+      return;
+    }
+    setIsCapturingScreen(true);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        await addTimelineEntry({
+          type: 'photo',
+          title: 'Print da Tela / Slide',
+          content: '',
+          mediaDataUrl: dataUrl,
+        });
+        showToast(
+          isRecording
+            ? `📸 Print capturado e salvo em ${formatDuration(recordingSeconds)} do áudio!`
+            : '📸 Print da tela salvo na aula!'
+        );
+      }
+    } catch (err) {
+      console.error('Erro ao capturar frame da tela:', err);
+    } finally {
+      setIsCapturingScreen(false);
+    }
+  };
+
+  // Browser Extension & Alt + S Listener
+  useEffect(() => {
+    const handleExtensionMessage = async (event: MessageEvent) => {
+      if (!event.data || event.data.source !== 'NOTEON_EXTENSION') return;
+
+      if (event.data.type === 'EXTENSION_READY') {
+        setIsExtensionDetected(true);
+      } else if (event.data.type === 'SCREENSHOT_CAPTURED' && event.data.dataUrl) {
+        setIsExtensionDetected(true);
+        if (!selectedTopicId || !selectedSubjectId) {
+          showToast('Selecione uma aula no NoteOn para salvar o print.', 'info');
+          return;
+        }
+
+        const titleText = event.data.pageTitle
+          ? `Print: ${event.data.pageTitle.slice(0, 50)}`
+          : 'Print do Slide (Plugin)';
+
+        await addTimelineEntry({
+          type: 'photo',
+          title: titleText,
+          content: '',
+          mediaDataUrl: event.data.dataUrl,
+        });
+
+        showToast(
+          isRecording
+            ? `📸 Print recebido do Plugin e salvo em ${formatDuration(recordingSeconds)} do áudio!`
+            : '📸 Print recebido do Plugin e salvo na aula!'
+        );
+      }
+    };
+
+    window.addEventListener('message', handleExtensionMessage);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        if (screenStream) {
+          handleCaptureScreenSnapshot();
+        } else {
+          handleStartScreenShare();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('message', handleExtensionMessage);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedTopicId, selectedSubjectId, isRecording, recordingSeconds, screenStream]);
 
   const handleAddTextNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1972,6 +2128,18 @@ export default function App() {
                         </span>
                       </button>
 
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowHeaderMenu(false);
+                          setShowExtensionModal(true);
+                        }}
+                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-purple-400 font-medium"
+                      >
+                        <Puzzle className="w-4 h-4" />
+                        <span>Plugin do Navegador (Alt + S)</span>
+                      </button>
+
                       <div className="my-1 border-t border-slate-800/60" />
 
                       <button
@@ -2405,6 +2573,31 @@ export default function App() {
                         <Pause className="w-3.5 h-3.5 text-amber-400" />
                       )}
                     </button>
+
+                    {/* Quick Screen Print while Audio is Recording */}
+                    {screenStream ? (
+                      <button
+                        type="button"
+                        onClick={handleCaptureScreenSnapshot}
+                        disabled={isCapturingScreen}
+                        className="px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer shadow-sm animate-pulse"
+                        title="Tirar print do slide da aula agora (Alt+S)"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-cyan-300" />
+                        <span className="hidden xs:inline">Print Slide (Alt+S)</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleStartScreenShare}
+                        className="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 cursor-pointer border border-slate-700"
+                        title="Conectar tela/slide para tirar prints com 1 clique (ou use o Plugin Alt+S)"
+                      >
+                        <Monitor className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="hidden xs:inline">Conectar Slide</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={stopAndSaveRecording}
@@ -2458,6 +2651,23 @@ export default function App() {
                   title="Adicionar Foto da Galeria"
                 >
                   <ImageIcon className="w-5 h-5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={screenStream ? handleCaptureScreenSnapshot : handleStartScreenShare}
+                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
+                    screenStream
+                      ? 'text-cyan-300 bg-cyan-950/50 border border-cyan-800/60 hover:bg-cyan-900/60 animate-pulse'
+                      : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/60'
+                  }`}
+                  title={
+                    screenStream
+                      ? 'Tirar Print da Tela Conectada (Alt + S)'
+                      : 'Conectar Tela/Slide para Prints (ou use o Plugin Alt+S)'
+                  }
+                >
+                  <Monitor className="w-5 h-5" />
                 </button>
 
                 <button
@@ -3014,6 +3224,29 @@ export default function App() {
                 <span>{confirmDialog.confirmText || 'Excluir'}</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Browser Extension & Screen Capture Modal */}
+      <ExtensionPluginModal
+        isOpen={showExtensionModal}
+        onClose={() => setShowExtensionModal(false)}
+        lightMode={lightMode}
+        isExtensionDetected={isExtensionDetected}
+        onStartNativeScreenShare={handleStartScreenShare}
+        hasNativeScreenStream={Boolean(screenStream)}
+      />
+
+      {/* Hidden Video for Screen Snapshot Capture */}
+      <video ref={screenVideoRef} autoPlay playsInline muted className="hidden" />
+
+      {/* Discreet In-App Toast Notification */}
+      {toastInfo && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
+          <div className="px-4 py-2.5 rounded-2xl bg-slate-900/95 text-white border border-indigo-500/40 shadow-2xl backdrop-blur-md flex items-center gap-2.5 text-xs font-semibold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{toastInfo.message}</span>
           </div>
         </div>
       )}
