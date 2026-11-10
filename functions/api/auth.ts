@@ -2,6 +2,11 @@ import crypto from 'node:crypto';
 
 const DEFAULT_AUTH_SECRET = 'noteon_super_secret_salt_2026';
 
+interface D1Database {
+  prepare(query: string): any;
+  batch(statements: any[]): Promise<any[]>;
+}
+
 interface KVNamespace {
   get(key: string, type?: 'text' | 'json' | 'arrayBuffer' | 'stream'): Promise<any>;
   put(key: string, value: string | ArrayBuffer | ReadableStream, options?: any): Promise<void>;
@@ -9,45 +14,66 @@ interface KVNamespace {
 }
 
 interface Env {
+  DB?: D1Database;
   NOTEON_KV?: KVNamespace;
   NOTEON_AUTH_SECRET?: string;
   [key: string]: any;
 }
 
-// In-memory fallback
+// Fallback in-memory
 const inMemoryStore = new Map<string, any>();
 
-async function storeGet<T = any>(env: Env, key: string): Promise<T | null> {
-  if (env?.NOTEON_KV) {
+async function getStoredUser(env: Env, cleanEmail: string): Promise<any | null> {
+  // 1. Tentar ler do Cloudflare D1
+  if (env?.DB) {
     try {
-      const val = await env.NOTEON_KV.get(key, 'text');
-      if (!val) return null;
-      try {
-        return JSON.parse(val);
-      } catch {
-        return val as unknown as T;
-      }
+      const stmt = env.DB.prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+      const row = await stmt.bind(cleanEmail).first();
+      if (row) return row;
     } catch (e) {
-      console.warn('Erro ao ler NOTEON_KV:', e);
+      console.warn('Erro ao ler usuário do D1:', e);
     }
   }
 
-  const memoryVal = inMemoryStore.get(key);
-  return memoryVal ? (memoryVal as T) : null;
+  // 2. Fallback para KV
+  if (env?.NOTEON_KV) {
+    try {
+      const val = await env.NOTEON_KV.get(`noteon:user:${cleanEmail}`, 'text');
+      if (val) return JSON.parse(val);
+    } catch (_) {}
+  }
+
+  return inMemoryStore.get(`noteon:user:${cleanEmail}`) || null;
 }
 
-async function storeSet(env: Env, key: string, value: any): Promise<void> {
-  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  if (env?.NOTEON_KV) {
+async function saveStoredUser(env: Env, userData: any): Promise<void> {
+  // 1. Salvar no Cloudflare D1
+  if (env?.DB) {
     try {
-      await env.NOTEON_KV.put(key, serialized);
-      return;
+      await env.DB.prepare(
+        'INSERT OR REPLACE INTO users (userId, email, passwordHash, salt, createdAt) VALUES (?, ?, ?, ?, ?)'
+      )
+        .bind(
+          userData.userId,
+          userData.email,
+          userData.passwordHash,
+          userData.salt,
+          userData.createdAt
+        )
+        .run();
     } catch (e) {
-      console.warn('Erro ao salvar em NOTEON_KV:', e);
+      console.warn('Erro ao salvar usuário no D1:', e);
     }
   }
 
-  inMemoryStore.set(key, typeof value === 'string' ? JSON.parse(value) : value);
+  // 2. Salvar também no KV como backup
+  if (env?.NOTEON_KV) {
+    try {
+      await env.NOTEON_KV.put(`noteon:user:${userData.email}`, JSON.stringify(userData));
+    } catch (_) {}
+  }
+
+  inMemoryStore.set(`noteon:user:${userData.email}`, userData);
 }
 
 // Crypto & Session Token Helpers
@@ -168,9 +194,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         );
       }
 
-      const userKey = `noteon:user:${cleanEmail}`;
-      const existingUser = await storeGet(env, userKey);
-
+      const existingUser = await getStoredUser(env, cleanEmail);
       if (existingUser) {
         return jsonResponse(
           { error: 'Este e-mail já está cadastrado. Clique em Entrar para fazer login.' },
@@ -190,7 +214,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         createdAt: Date.now(),
       };
 
-      await storeSet(env, userKey, userData);
+      await saveStoredUser(env, userData);
       const token = createSessionToken(userId, cleanEmail, secret);
 
       return jsonResponse(
@@ -212,8 +236,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         return jsonResponse({ error: 'Informe e-mail e senha.' }, 400);
       }
 
-      const userKey = `noteon:user:${cleanEmail}`;
-      const user = await storeGet(env, userKey);
+      const user = await getStoredUser(env, cleanEmail);
 
       if (!user || !user.passwordHash || !user.salt) {
         return jsonResponse(
@@ -259,7 +282,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       400
     );
   } catch (err: any) {
-    console.error('Erro em /api/auth no Cloudflare Pages:', err);
+    console.error('Erro em /api/auth no Cloudflare Pages D1:', err);
     return jsonResponse(
       {
         error: 'Erro interno no servidor de autenticação',

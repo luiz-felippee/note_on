@@ -248,6 +248,14 @@ export default function App() {
         setAllItems(res.data.items || []);
         setAllQuestions(res.data.questions || []);
 
+        const deletedSet = new Set(res.data.deletedIds || []);
+        if (selectedTopicId && deletedSet.has(selectedTopicId)) {
+          setSelectedTopicId(null);
+        }
+        if (selectedSubjectId && deletedSet.has(selectedSubjectId)) {
+          setSelectedSubjectId(null);
+        }
+
         const syncedAt = res.data.lastSyncedAt || Date.now();
         lastSyncedTimeRef.current = syncedAt;
         setLastSyncedTime(syncedAt);
@@ -305,6 +313,14 @@ export default function App() {
             setAllItems(freshData.items || []);
             setAllQuestions(freshData.questions || []);
 
+            const deletedSet = new Set(freshData.deletedIds || []);
+            if (selectedTopicId && deletedSet.has(selectedTopicId)) {
+              setSelectedTopicId(null);
+            }
+            if (selectedSubjectId && deletedSet.has(selectedSubjectId)) {
+              setSelectedSubjectId(null);
+            }
+
             const newTime = freshData.lastSyncedAt || serverLastSyncedAt;
             lastSyncedTimeRef.current = newTime;
             setLastSyncedTime(newTime);
@@ -315,7 +331,7 @@ export default function App() {
       } finally {
         isPolling = false;
       }
-    }, 3500);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [cloudUser, isSyncingCloud]);

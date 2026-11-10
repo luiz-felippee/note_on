@@ -4,6 +4,11 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "noteon-db"
+database_id = "5134b533-c352-4964-9874-9c0928b6bd67"
+
 [[kv_namespaces]]
 binding = "NOTEON_KV"
 id = "7706a57d96a24408a7c37658ca4cf341"

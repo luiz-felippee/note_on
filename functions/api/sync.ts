@@ -2,6 +2,11 @@ import crypto from 'node:crypto';
 
 const DEFAULT_AUTH_SECRET = 'noteon_super_secret_salt_2026';
 
+interface D1Database {
+  prepare(query: string): any;
+  batch(statements: any[]): Promise<any[]>;
+}
+
 interface KVNamespace {
   get(key: string, type?: 'text' | 'json' | 'arrayBuffer' | 'stream'): Promise<any>;
   put(key: string, value: string | ArrayBuffer | ReadableStream, options?: any): Promise<void>;
@@ -9,45 +14,10 @@ interface KVNamespace {
 }
 
 interface Env {
+  DB?: D1Database;
   NOTEON_KV?: KVNamespace;
   NOTEON_AUTH_SECRET?: string;
   [key: string]: any;
-}
-
-// In-memory fallback
-const inMemoryStore = new Map<string, any>();
-
-async function storeGet<T = any>(env: Env, key: string): Promise<T | null> {
-  if (env?.NOTEON_KV) {
-    try {
-      const val = await env.NOTEON_KV.get(key, 'text');
-      if (!val) return null;
-      try {
-        return JSON.parse(val);
-      } catch {
-        return val as unknown as T;
-      }
-    } catch (e) {
-      console.warn('Erro ao ler NOTEON_KV:', e);
-    }
-  }
-
-  const memoryVal = inMemoryStore.get(key);
-  return memoryVal ? (memoryVal as T) : null;
-}
-
-async function storeSet(env: Env, key: string, value: any): Promise<void> {
-  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  if (env?.NOTEON_KV) {
-    try {
-      await env.NOTEON_KV.put(key, serialized);
-      return;
-    } catch (e) {
-      console.warn('Erro ao salvar em NOTEON_KV:', e);
-    }
-  }
-
-  inMemoryStore.set(key, typeof value === 'string' ? JSON.parse(value) : value);
 }
 
 // Session Token Verification
@@ -95,34 +65,6 @@ function verifySessionToken(token: string, secret: string): SessionPayload | nul
   }
 }
 
-// Merge entity lists keeping the latest version
-function mergeEntityLists<T extends { id: string; updatedAt?: number; createdAt?: number }>(
-  serverList: T[] = [],
-  clientList: T[] = []
-): T[] {
-  const map = new Map<string, T>();
-
-  for (const item of serverList || []) {
-    if (item && item.id) map.set(item.id, item);
-  }
-
-  for (const item of clientList || []) {
-    if (!item || !item.id) continue;
-    const existing = map.get(item.id);
-    if (!existing) {
-      map.set(item.id, item);
-    } else {
-      const clientTime = item.updatedAt || item.createdAt || 0;
-      const serverTime = existing.updatedAt || existing.createdAt || 0;
-      if (clientTime >= serverTime) {
-        map.set(item.id, item);
-      }
-    }
-  }
-
-  return Array.from(map.values());
-}
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -137,6 +79,64 @@ function jsonResponse(data: any, status = 200) {
       'Content-Type': 'application/json',
     },
   });
+}
+
+// Auto-migration helper from legacy KV to D1 on first access
+async function ensureMigratedFromKvToD1(env: Env, userId: string): Promise<void> {
+  if (!env.DB || !env.NOTEON_KV) return;
+
+  try {
+    const countRow = await env.DB.prepare(
+      'SELECT COUNT(*) as count FROM sync_entities WHERE userId = ?'
+    )
+      .bind(userId)
+      .first();
+
+    if (countRow && countRow.count > 0) return;
+
+    // Read existing KV vault
+    const rawVault = await env.NOTEON_KV.get(`noteon:userdata:${userId}`, 'text');
+    if (!rawVault) return;
+
+    const kvData = JSON.parse(rawVault);
+    const now = Date.now();
+    const deletedSet = new Set<string>(kvData.deletedIds || []);
+
+    const statements: any[] = [];
+
+    // Migrate tombstoned items
+    for (const id of deletedSet) {
+      statements.push(
+        env.DB.prepare(
+          'INSERT OR IGNORE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?)'
+        ).bind(userId, id, 'tombstone', '{}', now, now)
+      );
+    }
+
+    // Migrate active entities
+    const types = ['courses', 'subjects', 'topics', 'items', 'questions'] as const;
+    for (const type of types) {
+      const list = kvData[type] || [];
+      for (const item of list) {
+        if (!item || !item.id || deletedSet.has(item.id)) continue;
+        const itemUpdated = item.updatedAt || item.createdAt || now;
+        statements.push(
+          env.DB.prepare(
+            'INSERT OR IGNORE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
+          ).bind(userId, item.id, type, JSON.stringify(item), itemUpdated)
+        );
+      }
+    }
+
+    if (statements.length > 0) {
+      // Execute in chunks of 50 statements
+      for (let i = 0; i < statements.length; i += 50) {
+        await env.DB.batch(statements.slice(i, i + 50));
+      }
+    }
+  } catch (err) {
+    console.warn('Erro na migração KV -> D1:', err);
+  }
 }
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
@@ -158,115 +158,147 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     );
   }
 
-  const userVaultKey = `noteon:userdata:${session.userId}`;
-  const userVersionKey = `noteon:userver:${session.userId}`;
+  const userId = session.userId;
 
   try {
-    // GET: Pull cloud data or lightweight version check
-    if (request.method === 'GET') {
-      const url = new URL(request.url);
-      const isCheckOnly = url.searchParams.get('check') === 'true' || url.searchParams.get('check') === '1';
+    // Se D1 estiver disponível, usamos D1 com consistência forte
+    if (env.DB) {
+      await ensureMigratedFromKvToD1(env, userId);
 
-      if (isCheckOnly) {
-        let version = await storeGet<number>(env, userVersionKey);
-        if (!version) {
-          const fullData = await storeGet(env, userVaultKey);
-          version = fullData?.lastSyncedAt || 0;
-        }
+      const url = new URL(request.url);
+      const isCheckOnly =
+        url.searchParams.get('check') === 'true' || url.searchParams.get('check') === '1';
+
+      // 1. Lightweight Check (retorna apenas o último timestamp)
+      if (request.method === 'GET' && isCheckOnly) {
+        const row = await env.DB.prepare(
+          'SELECT MAX(updatedAt) as maxUpdated FROM sync_entities WHERE userId = ?'
+        )
+          .bind(userId)
+          .first();
+
         return jsonResponse({
           success: true,
-          lastSyncedAt: Number(version) || 0,
+          lastSyncedAt: Number(row?.maxUpdated) || 0,
         });
       }
 
-      const cloudData = await storeGet(env, userVaultKey);
-      if (cloudData) {
-        const deletedSet = new Set<string>(cloudData.deletedIds || []);
-        if (deletedSet.size > 0) {
-          cloudData.courses = (cloudData.courses || []).filter((i: any) => !deletedSet.has(i.id));
-          cloudData.subjects = (cloudData.subjects || []).filter((i: any) => !deletedSet.has(i.id));
-          cloudData.topics = (cloudData.topics || []).filter((i: any) => !deletedSet.has(i.id));
-          cloudData.items = (cloudData.items || []).filter((i: any) => !deletedSet.has(i.id));
-          cloudData.questions = (cloudData.questions || []).filter((i: any) => !deletedSet.has(i.id));
+      // 2. POST: Inserir alterações, aplicar tombstones e mesclar
+      if (request.method === 'POST') {
+        let clientData: any = {};
+        try {
+          clientData = await request.json();
+        } catch (_) {
+          clientData = {};
         }
+
+        const now = Date.now();
+        const clientDeletedIds: string[] = clientData.deletedIds || [];
+        const statements: any[] = [];
+
+        // A. Aplicar exclusões: A EXCLUSÃO SEMPRE VENCE!
+        for (const id of clientDeletedIds) {
+          if (!id) continue;
+          statements.push(
+            env.DB.prepare(
+              `INSERT INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt)
+               VALUES (?, ?, 'tombstone', '{}', ?, ?)
+               ON CONFLICT (userId, entityId)
+               DO UPDATE SET deletedAt = excluded.deletedAt, updatedAt = excluded.updatedAt`
+            ).bind(userId, id, now, now)
+          );
+        }
+
+        // B. Inserir ou atualizar entidades ativas
+        const types = ['courses', 'subjects', 'topics', 'items', 'questions'] as const;
+        for (const type of types) {
+          const list = clientData[type] || [];
+          for (const item of list) {
+            if (!item || !item.id) continue;
+            // Pula se já estiver no conjunto de IDs deletados enviado
+            if (clientDeletedIds.includes(item.id)) continue;
+
+            const itemUpdated = item.updatedAt || item.createdAt || now;
+            statements.push(
+              env.DB.prepare(
+                `INSERT INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt)
+                 VALUES (?, ?, ?, ?, ?, NULL)
+                 ON CONFLICT (userId, entityId)
+                 DO UPDATE SET
+                   data = excluded.data,
+                   entityType = excluded.entityType,
+                   updatedAt = excluded.updatedAt
+                 WHERE sync_entities.deletedAt IS NULL`
+              ).bind(userId, item.id, type, JSON.stringify(item), itemUpdated)
+            );
+          }
+        }
+
+        if (statements.length > 0) {
+          for (let i = 0; i < statements.length; i += 60) {
+            await env.DB.batch(statements.slice(i, i + 60));
+          }
+        }
+      }
+
+      // 3. Montar e retornar o estado completo atualizado do D1
+      const allRows = await env.DB.prepare(
+        'SELECT entityType, entityId, data, updatedAt, deletedAt FROM sync_entities WHERE userId = ?'
+      )
+        .bind(userId)
+        .all();
+
+      const courses: any[] = [];
+      const subjects: any[] = [];
+      const topics: any[] = [];
+      const items: any[] = [];
+      const questions: any[] = [];
+      const deletedIds: string[] = [];
+
+      let maxUpdated = 0;
+
+      for (const row of allRows.results || []) {
+        if (row.updatedAt > maxUpdated) {
+          maxUpdated = row.updatedAt;
+        }
+
+        // Se estiver marcado como deletado
+        if (row.deletedAt) {
+          deletedIds.push(row.entityId);
+          continue;
+        }
+
+        // Se for ativo, desserializa e classifica pelo tipo
+        try {
+          const parsed = JSON.parse(row.data);
+          if (row.entityType === 'courses') courses.push(parsed);
+          else if (row.entityType === 'subjects') subjects.push(parsed);
+          else if (row.entityType === 'topics') topics.push(parsed);
+          else if (row.entityType === 'items') items.push(parsed);
+          else if (row.entityType === 'questions') questions.push(parsed);
+        } catch (_) {}
       }
 
       return jsonResponse({
         success: true,
-        data: cloudData || {
-          courses: [],
-          subjects: [],
-          topics: [],
-          items: [],
-          questions: [],
-          deletedIds: [],
-          lastSyncedAt: Date.now(),
+        data: {
+          courses,
+          subjects,
+          topics,
+          items,
+          questions,
+          deletedIds: Array.from(new Set(deletedIds)),
+          lastSyncedAt: maxUpdated || Date.now(),
         },
       });
     }
 
-    // POST: Push local data & merge
-    if (request.method === 'POST') {
-      let clientData: any = {};
-      try {
-        clientData = await request.json();
-      } catch (_) {
-        clientData = {};
-      }
-
-      const cloudData = (await storeGet(env, userVaultKey)) || {
-        courses: [],
-        subjects: [],
-        topics: [],
-        items: [],
-        questions: [],
-        deletedIds: [],
-      };
-
-      // 1. Unir tombstones de exclusão
-      const allDeletedIds = new Set<string>([
-        ...(cloudData.deletedIds || []),
-        ...(clientData.deletedIds || []),
-      ]);
-
-      // 2. Mesclar entidades descartando qualquer item que foi excluído
-      const filterNotDeleted = <T extends { id: string }>(list: T[] = []) =>
-        list.filter((item) => item && item.id && !allDeletedIds.has(item.id));
-
-      const mergedCourses = filterNotDeleted(mergeEntityLists(cloudData.courses, clientData.courses));
-      const mergedSubjects = filterNotDeleted(mergeEntityLists(cloudData.subjects, clientData.subjects));
-      const mergedTopics = filterNotDeleted(mergeEntityLists(cloudData.topics, clientData.topics));
-      const mergedItems = filterNotDeleted(mergeEntityLists(cloudData.items, clientData.items));
-      const mergedQuestions = filterNotDeleted(mergeEntityLists(cloudData.questions, clientData.questions));
-
-      const now = Date.now();
-      const mergedPayload = {
-        courses: mergedCourses,
-        subjects: mergedSubjects,
-        topics: mergedTopics,
-        items: mergedItems,
-        questions: mergedQuestions,
-        deletedIds: Array.from(allDeletedIds).slice(-3000),
-        lastSyncedAt: now,
-      };
-
-      await Promise.all([
-        storeSet(env, userVaultKey, mergedPayload),
-        storeSet(env, userVersionKey, now),
-      ]);
-
-      return jsonResponse({
-        success: true,
-        data: mergedPayload,
-      });
-    }
-
-    return jsonResponse({ error: 'Método não permitido.' }, 405);
+    return jsonResponse({ error: 'Banco D1 não configurado.' }, 500);
   } catch (err: any) {
-    console.error('Erro em /api/sync no Cloudflare Pages:', err);
+    console.error('Erro em /api/sync no Cloudflare D1:', err);
     return jsonResponse(
       {
-        error: 'Erro interno ao sincronizar dados na nuvem',
+        error: 'Erro interno ao sincronizar dados no D1',
         message: err.message,
       },
       500

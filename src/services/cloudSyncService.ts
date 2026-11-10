@@ -150,7 +150,11 @@ export async function syncWithCloud(localData: SyncPayload): Promise<{
     body: JSON.stringify(payloadWithDeletions),
   });
 
-  return await parseResponseJson(res, 'Falha na sincronização.');
+  const json = await parseResponseJson(res, 'Falha na sincronização.');
+  if (json?.data?.deletedIds && Array.isArray(json.data.deletedIds)) {
+    recordDeletion(json.data.deletedIds);
+  }
+  return json;
 }
 
 /**
@@ -194,6 +198,9 @@ export async function pullFromCloud(): Promise<SyncPayload & { lastSyncedAt?: nu
   });
 
   const json = await parseResponseJson(res, 'Falha ao buscar dados na nuvem.');
+  if (json?.data?.deletedIds && Array.isArray(json.data.deletedIds)) {
+    recordDeletion(json.data.deletedIds);
+  }
   return json.data;
 }
 
