@@ -43,6 +43,8 @@ import {
 import {
   dispatchStudyToWhatsApp,
   getStoredWhatsAppConfig,
+  saveStoredWhatsAppConfig,
+  formatPhoneForDisplay,
 } from './services/whatsappService';
 import {
   Course,
@@ -1595,6 +1597,20 @@ export default function App() {
     }
   };
 
+  const handleEditWhatsAppNumber = () => {
+    setShowHeaderMenu(false);
+    const config = getStoredWhatsAppConfig();
+    const current = config.phone ? formatPhoneForDisplay(config.phone) : '';
+    const newNumber = window.prompt(
+      'Digite seu número de WhatsApp com DDD (ex: 11 99999-8888):',
+      current
+    );
+    if (newNumber !== null) {
+      saveStoredWhatsAppConfig({ phone: newNumber.trim() });
+      showToast('Número de WhatsApp salvo com sucesso!', 'success');
+    }
+  };
+
   const stats = useMemo(() => {
     const photos = currentTopicItems.filter((i) => i.type === 'photo').length;
     const audios = currentTopicItems.filter((i) => i.type === 'audio').length;
@@ -2450,6 +2466,20 @@ export default function App() {
                       >
                         <MessageCircle className="w-4 h-4 text-emerald-400" />
                         <span>Mandar Resumo pro WhatsApp</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleEditWhatsAppNumber}
+                        className="w-full px-3.5 py-2 text-left hover:bg-slate-800 text-slate-300 hover:text-emerald-300 flex items-center justify-between cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Smartphone className="w-4 h-4 text-emerald-400" />
+                          <span>Editar Número do WhatsApp</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {getStoredWhatsAppConfig().phone ? formatPhoneForDisplay(getStoredWhatsAppConfig().phone) : 'Não definido'}
+                        </span>
                       </button>
 
                       <button

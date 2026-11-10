@@ -342,9 +342,21 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
         },
         sanitized
       );
-      showToast('WhatsApp aberto! Envie a mensagem no chat.', 'success');
+      showToast('WhatsApp aberto com seu plano!', 'success');
       setPendingWhatsAppContent(null);
+    } else {
+      showToast('Número do WhatsApp atualizado com sucesso!', 'success');
     }
+  };
+
+  const handleClearPhone = () => {
+    saveStoredWhatsAppConfig({ phone: '' });
+    setWhatsappConfig((prev) => ({ ...prev, phone: '' }));
+    setWhatsappPhone('');
+    setPromptPhoneInput('');
+    setShowPhonePromptModal(false);
+    setPendingWhatsAppContent(null);
+    showToast('Número de WhatsApp removido.', 'info');
   };
 
   const handleCopyMessage = (msgId: string, content: string) => {
@@ -370,15 +382,13 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div
-        className={`w-full max-w-3xl h-[92vh] max-h-[850px] rounded-3xl border shadow-2xl flex flex-col overflow-hidden ${
-          lightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
-        }`}
+        className={`w-full max-w-3xl h-[92vh] max-h-[850px] rounded-3xl border shadow-2xl flex flex-col overflow-hidden ${lightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+          }`}
       >
         {/* Header */}
         <div
-          className={`p-3 sm:p-4 border-b flex items-center justify-between shrink-0 ${
-            lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/80 border-slate-800'
-          }`}
+          className={`p-3 sm:p-4 border-b flex items-center justify-between shrink-0 ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/80 border-slate-800'
+            }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="p-2 rounded-xl bg-gradient-to-tr from-indigo-600 via-emerald-600 to-purple-600 text-white shadow-md shadow-indigo-500/20 shrink-0">
@@ -400,18 +410,40 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Quick Edit WhatsApp in Header */}
             <button
               type="button"
-              onClick={() => setShowConfig((v) => !v)}
+              onClick={() => {
+                setPromptPhoneInput(whatsappConfig.phone ? formatPhoneForDisplay(whatsappConfig.phone) : '');
+                setShowPhonePromptModal(true);
+              }}
               className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer ${
-                showConfig
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : configuredCount > 0
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                whatsappConfig.phone
+                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                   : lightMode
                   ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
                   : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
               }`}
+              title="Clique para editar o seu número de WhatsApp"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden md:inline">
+                {whatsappConfig.phone ? formatPhoneForDisplay(whatsappConfig.phone) : 'WhatsApp'}
+              </span>
+              <span className="text-[10px] opacity-75 underline ml-0.5">Editar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowConfig((v) => !v)}
+              className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer ${showConfig
+                  ? 'bg-indigo-600 text-white border-indigo-500'
+                  : configuredCount > 0
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : lightMode
+                      ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
+                }`}
               title="Configurar APIs e Escolher Modelos (NVIDIA, Gemini, Groq, DeepSeek)"
             >
               <Cpu className="w-3.5 h-3.5" />
@@ -423,9 +455,8 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className={`p-2 rounded-xl transition cursor-pointer ${
-                lightMode ? 'text-slate-500 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-800'
-              }`}
+              className={`p-2 rounded-xl transition cursor-pointer ${lightMode ? 'text-slate-500 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-800'
+                }`}
             >
               <X className="w-5 h-5" />
             </button>
@@ -435,9 +466,8 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
         {/* API Settings & Model Selection Sub-Drawer */}
         {showConfig && (
           <div
-            className={`p-4 border-b shrink-0 overflow-y-auto max-h-80 ${
-              lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
-            }`}
+            className={`p-4 border-b shrink-0 overflow-y-auto max-h-80 ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
+              }`}
           >
             <form onSubmit={handleSaveKeys} className="space-y-4">
               <div className="flex items-center justify-between">
@@ -760,9 +790,8 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
 
         {/* Model Selection Bar & Quick Action Chips */}
         <div
-          className={`px-3 py-2 border-b flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0 text-xs ${
-            lightMode ? 'bg-slate-100/70 border-slate-200' : 'bg-slate-950/40 border-slate-800'
-          }`}
+          className={`px-3 py-2 border-b flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0 text-xs ${lightMode ? 'bg-slate-100/70 border-slate-200' : 'bg-slate-950/40 border-slate-800'
+            }`}
         >
           {/* Active Model Selector */}
           <div className="flex items-center gap-1.5 shrink-0">
@@ -776,11 +805,10 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 setSelectedProvider(val);
                 saveStoredAiKeys({ activeProviderSelection: val });
               }}
-              className={`text-xs rounded-xl px-2.5 py-1.5 border font-semibold focus:outline-none cursor-pointer transition ${
-                selectedProvider === 'auto'
+              className={`text-xs rounded-xl px-2.5 py-1.5 border font-semibold focus:outline-none cursor-pointer transition ${selectedProvider === 'auto'
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
                   : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40'
-              }`}
+                }`}
             >
               <option value="auto">⚡ Auto-Failover (NVIDIA + Gemini + Groq)</option>
               <option value="nvidia">🟢 NVIDIA NIM ({keysConfig.nvidiaModel?.split('/')[1] || 'Llama 3.3'})</option>
@@ -801,11 +829,10 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 )
               }
               disabled={isLoading}
-              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
-                lightMode
+              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${lightMode
                   ? 'bg-white hover:bg-indigo-50 border-slate-200 text-indigo-700'
                   : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-indigo-300'
-              }`}
+                }`}
             >
               <Layers className="w-3.5 h-3.5 text-indigo-400" />
               <span>📌 Organizar Tópicos</span>
@@ -819,11 +846,10 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 )
               }
               disabled={isLoading}
-              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
-                lightMode
+              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${lightMode
                   ? 'bg-white hover:bg-emerald-50 border-slate-200 text-emerald-700'
                   : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-emerald-300'
-              }`}
+                }`}
             >
               <Calendar className="w-3.5 h-3.5 text-emerald-400" />
               <span>📅 Plano de Estudo</span>
@@ -848,13 +874,12 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 )}
 
                 <div
-                  className={`max-w-[88%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed ${
-                    isUser
+                  className={`max-w-[88%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed ${isUser
                       ? 'bg-indigo-600 text-white rounded-br-xs shadow-md'
                       : lightMode
-                      ? 'bg-slate-100 text-slate-800 border border-slate-200 shadow-sm rounded-bl-xs'
-                      : 'bg-slate-800/80 text-slate-200 border border-slate-700/60 shadow-sm rounded-bl-xs'
-                  }`}
+                        ? 'bg-slate-100 text-slate-800 border border-slate-200 shadow-sm rounded-bl-xs'
+                        : 'bg-slate-800/80 text-slate-200 border border-slate-700/60 shadow-sm rounded-bl-xs'
+                    }`}
                 >
                   <div className="whitespace-pre-wrap">{msg.content}</div>
 
@@ -886,15 +911,29 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                           <span>Salvar no Caderno</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleSendToWhatsApp(msg.content)}
-                          className="hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition text-emerald-400 font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/20"
-                          title="Enviar este plano de estudos diretamente para seu WhatsApp"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Mandar pro WhatsApp</span>
-                        </button>
+                        <div className="inline-flex items-center">
+                          <button
+                            type="button"
+                            onClick={() => handleSendToWhatsApp(msg.content)}
+                            className="hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition text-emerald-400 font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-l-lg border border-r-0 border-emerald-500/20"
+                            title="Enviar este plano de estudos diretamente para seu WhatsApp"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Mandar pro WhatsApp</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPromptPhoneInput(whatsappConfig.phone ? formatPhoneForDisplay(whatsappConfig.phone) : '');
+                              setPendingWhatsAppContent(msg.content);
+                              setShowPhonePromptModal(true);
+                            }}
+                            className="hover:text-emerald-300 flex items-center px-1.5 py-0.5 rounded-r-lg border border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/25 text-[10px] text-emerald-400 cursor-pointer transition"
+                            title="Editar ou trocar o número do WhatsApp"
+                          >
+                            <span>✏️</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -909,9 +948,8 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 <Sparkles className="w-4 h-4" />
               </div>
               <div
-                className={`p-3.5 rounded-2xl rounded-bl-xs text-xs flex items-center gap-2.5 ${
-                  lightMode ? 'bg-slate-100 text-slate-700' : 'bg-slate-800 text-slate-300'
-                }`}
+                className={`p-3.5 rounded-2xl rounded-bl-xs text-xs flex items-center gap-2.5 ${lightMode ? 'bg-slate-100 text-slate-700' : 'bg-slate-800 text-slate-300'
+                  }`}
               >
                 <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
                 <span>O Tutor IA está consultando o modelo e analisando o conteúdo da aula...</span>
@@ -924,9 +962,8 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
 
         {/* Bottom Chat Input Bar */}
         <div
-          className={`p-3 sm:p-4 border-t shrink-0 ${
-            lightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'
-          }`}
+          className={`p-3 sm:p-4 border-t shrink-0 ${lightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'
+            }`}
         >
           <form
             onSubmit={(e) => {
@@ -947,11 +984,10 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 }
               }}
               placeholder="Pergunte qualquer coisa sobre a aula, peça um plano de estudos ou tire uma dúvida..."
-              className={`flex-1 rounded-2xl p-3 text-xs sm:text-sm border resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition ${
-                lightMode
+              className={`flex-1 rounded-2xl p-3 text-xs sm:text-sm border resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition ${lightMode
                   ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400'
                   : 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500'
-              }`}
+                }`}
             />
 
             <button
@@ -966,17 +1002,23 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
         </div>
       </div>
 
-      {/* Modal Rápido para Informar WhatsApp caso não esteja configurado */}
+      {/* Modal Rápido para Informar ou Editar WhatsApp */}
       {showPhonePromptModal && (
         <div className="fixed inset-0 z-60 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-emerald-500/40 p-5 shadow-2xl text-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-                <MessageCircle className="w-5 h-5" />
+                <Smartphone className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">Enviar para o seu WhatsApp</h3>
-                <p className="text-[11px] text-slate-400">Informe seu WhatsApp com DDD para receber o plano de estudo</p>
+                <h3 className="text-sm font-bold text-white">
+                  {whatsappConfig.phone ? 'Editar Número do WhatsApp' : 'Cadastrar seu WhatsApp'}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  {whatsappConfig.phone
+                    ? 'Atualize seu número para receber os planos de estudo'
+                    : 'Informe seu WhatsApp com DDD para receber o plano de estudo'}
+                </p>
               </div>
             </div>
 
@@ -994,33 +1036,47 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                   }
                 }}
                 placeholder="Ex: 11 99999-8888"
-                className="w-full text-sm rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="w-full text-sm rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
               />
               <span className="text-[10px] text-slate-400 block">
-                Ficará salvo para envio com 1 clique sempre que você quiser!
+                Fica salvo automaticamente para envios futuros em 1 clique.
               </span>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPhonePromptModal(false);
-                  setPendingWhatsAppContent(null);
-                }}
-                className="px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer transition"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmPromptPhone}
-                disabled={!promptPhoneInput.trim()}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-white text-xs font-bold cursor-pointer transition shadow-md shadow-emerald-600/25 flex items-center gap-1.5"
-              >
-                <MessageCircle className="w-3.5 h-3.5" />
-                <span>Enviar para WhatsApp</span>
-              </button>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              {whatsappConfig.phone ? (
+                <button
+                  type="button"
+                  onClick={handleClearPhone}
+                  className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer transition"
+                >
+                  Remover
+                </button>
+              ) : (
+                <span />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPhonePromptModal(false);
+                    setPendingWhatsAppContent(null);
+                  }}
+                  className="px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPromptPhone}
+                  disabled={!promptPhoneInput.trim()}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-white text-xs font-bold cursor-pointer transition shadow-md shadow-emerald-600/25 flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{pendingWhatsAppContent ? 'Salvar e Enviar' : 'Salvar'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
