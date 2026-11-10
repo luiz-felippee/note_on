@@ -38,7 +38,12 @@ import {
   Puzzle,
   CheckCircle2,
   BookOpen,
+  MessageCircle,
 } from 'lucide-react';
+import {
+  dispatchStudyToWhatsApp,
+  getStoredWhatsAppConfig,
+} from './services/whatsappService';
 import {
   Course,
   Subject,
@@ -1524,6 +1529,72 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleSendLessonToWhatsApp = async () => {
+    setShowHeaderMenu(false);
+    if (!currentTopic || !currentSubject) return;
+
+    const audios = currentTopicItems.filter((i) => i.type === 'audio');
+    const photos = currentTopicItems.filter((i) => i.type === 'photo');
+    const examItems = currentTopicItems.filter((i) => i.importantForExam);
+
+    const lines: string[] = [];
+    lines.push(`Resumo da aula: *${currentTopic.title}*`);
+    lines.push(`Disciplina: *${currentSubject.name}*`);
+    if (currentCourse) lines.push(`Curso: *${currentCourse.name}*`);
+    lines.push('');
+    lines.push(`📊 *Estatísticas:*`);
+    lines.push(`• ${audios.length} gravações de áudio`);
+    lines.push(`• ${photos.length} fotos de lousa/slides`);
+    lines.push(`• ${examItems.length} marcações de "Cai na Prova"`);
+    lines.push('');
+
+    if (examItems.length > 0) {
+      lines.push('🎯 *Pontos Críticos para a Prova:*');
+      examItems.slice(0, 5).forEach((item, idx) => {
+        const desc = item.title || item.transcript?.slice(0, 100) || item.content || 'Ponto importante';
+        lines.push(`${idx + 1}. ${desc}`);
+      });
+      lines.push('');
+    }
+
+    if (audios.some((a) => a.transcript)) {
+      lines.push('🎙️ *Trechos Principais dos Áudios:*');
+      audios
+        .filter((a) => a.transcript)
+        .slice(0, 3)
+        .forEach((a) => {
+          lines.push(`• "${a.transcript?.slice(0, 140)}..."`);
+        });
+      lines.push('');
+    }
+
+    const content = lines.join('\n');
+
+    const config = getStoredWhatsAppConfig();
+    if (!config.phone && !config.webhookUrl) {
+      setShowAiChatModal(true);
+      showToast('Configure seu número de WhatsApp no Tutor IA para envio!', 'info');
+      return;
+    }
+
+    const res = await dispatchStudyToWhatsApp({
+      topicTitle: currentTopic.title,
+      subjectName: currentSubject.name,
+      courseName: currentCourse?.name,
+      content,
+      audioCount: audios.length,
+      photoCount: photos.length,
+      questionsCount: currentTopicQuestions.length,
+    });
+
+    if (res.success) {
+      showToast(res.message || 'Resumo enviado para o WhatsApp!', 'success');
+    } else {
+      showToast('Informe seu número de WhatsApp nas configurações.', 'info');
+      setShowAiChatModal(true);
+    }
+  };
+
   const stats = useMemo(() => {
     const photos = currentTopicItems.filter((i) => i.type === 'photo').length;
     const audios = currentTopicItems.filter((i) => i.type === 'audio').length;
@@ -2370,6 +2441,15 @@ export default function App() {
                       >
                         <Download className="w-4 h-4 text-emerald-400" />
                         <span>Exportar Apostila da Aula</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSendLessonToWhatsApp}
+                        className="w-full px-3.5 py-2 text-left hover:bg-emerald-600/15 text-emerald-400 flex items-center gap-2.5 cursor-pointer font-medium"
+                      >
+                        <MessageCircle className="w-4 h-4 text-emerald-400" />
+                        <span>Mandar Resumo pro WhatsApp</span>
                       </button>
 
                       <button

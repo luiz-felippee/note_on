@@ -14,6 +14,8 @@ import {
   BookmarkPlus,
   SlidersHorizontal,
   ChevronDown,
+  MessageCircle,
+  Smartphone,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -32,6 +34,14 @@ import {
   AVAILABLE_MODELS,
   LessonContext,
 } from '../services/aiProviderService';
+import {
+  getStoredWhatsAppConfig,
+  saveStoredWhatsAppConfig,
+  dispatchStudyToWhatsApp,
+  formatPhoneForDisplay,
+  sanitizePhoneNumber,
+  sendViaWebhook,
+} from '../services/whatsappService';
 
 interface StudyAiChatModalProps {
   isOpen: boolean;
@@ -71,6 +81,17 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
     keysConfig.activeProviderSelection || 'auto'
   );
   const [savedKeysSuccess, setSavedKeysSuccess] = useState(false);
+
+  // WhatsApp Integration states
+  const [whatsappConfig, setWhatsappConfig] = useState(getStoredWhatsAppConfig());
+  const [whatsappPhone, setWhatsappPhone] = useState(formatPhoneForDisplay(whatsappConfig.phone));
+  const [whatsappWebhook, setWhatsappWebhook] = useState(whatsappConfig.webhookUrl);
+  const [whatsappAutoWebhook, setWhatsappAutoWebhook] = useState(whatsappConfig.autoSendWebhook);
+
+  // Quick prompt for phone when user clicks Send to WhatsApp for the first time
+  const [showPhonePromptModal, setShowPhonePromptModal] = useState(false);
+  const [pendingWhatsAppContent, setPendingWhatsAppContent] = useState<string | null>(null);
+  const [promptPhoneInput, setPromptPhoneInput] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -149,6 +170,26 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Disparo automático via Webhook se ativado pelo usuário
+      if (
+        assistantMsg.isStudyPlan &&
+        whatsappConfig.autoSendWebhook &&
+        whatsappConfig.webhookUrl
+      ) {
+        sendViaWebhook(
+          whatsappConfig.webhookUrl,
+          {
+            topicTitle: topic.title,
+            subjectName: subject?.name,
+            courseName: course?.name,
+            content: assistantMsg.content,
+            audioCount: items.filter((i) => i.type === 'audio').length,
+            photoCount: items.filter((i) => i.type === 'photo').length,
+          },
+          whatsappConfig.phone
+        ).catch((err) => console.warn('Erro ao disparar webhook automático:', err));
+      }
     } catch (err: any) {
       console.error('Erro no Tutor IA:', err);
       const errorMsg: ChatMessage = {
@@ -171,12 +212,80 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
     };
     saveStoredAiKeys(updated);
     setKeysConfig(updated);
+
+    // Salva configurações do WhatsApp
+    const cleanedPhone = sanitizePhoneNumber(whatsappPhone);
+    saveStoredWhatsAppConfig({
+      phone: cleanedPhone,
+      webhookUrl: whatsappWebhook,
+      autoSendWebhook: whatsappAutoWebhook,
+    });
+    setWhatsappConfig({
+      phone: cleanedPhone,
+      webhookUrl: whatsappWebhook.trim(),
+      autoSendWebhook: whatsappAutoWebhook,
+    });
+    setWhatsappPhone(formatPhoneForDisplay(cleanedPhone));
+
     setSavedKeysSuccess(true);
-    showToast('Provedores e modelos salvos com sucesso!');
+    showToast('Provedores, modelos e WhatsApp salvos!');
     setTimeout(() => {
       setSavedKeysSuccess(false);
       setShowConfig(false);
     }, 1200);
+  };
+
+  const handleSendToWhatsApp = async (content: string) => {
+    const currentConfig = getStoredWhatsAppConfig();
+    if (!currentConfig.phone && !currentConfig.webhookUrl) {
+      setPendingWhatsAppContent(content);
+      setPromptPhoneInput('');
+      setShowPhonePromptModal(true);
+      return;
+    }
+
+    const res = await dispatchStudyToWhatsApp({
+      topicTitle: topic.title,
+      subjectName: subject?.name,
+      courseName: course?.name,
+      content,
+      audioCount: items.filter((i) => i.type === 'audio').length,
+      photoCount: items.filter((i) => i.type === 'photo').length,
+      questionsCount: questions.length,
+    });
+
+    if (res.success) {
+      showToast(res.message || 'WhatsApp aberto com o plano pronto!', 'success');
+    } else {
+      setPendingWhatsAppContent(content);
+      setShowPhonePromptModal(true);
+    }
+  };
+
+  const handleConfirmPromptPhone = async () => {
+    if (!promptPhoneInput.trim()) return;
+    const sanitized = sanitizePhoneNumber(promptPhoneInput);
+    saveStoredWhatsAppConfig({ phone: sanitized });
+    setWhatsappConfig((prev) => ({ ...prev, phone: sanitized }));
+    setWhatsappPhone(formatPhoneForDisplay(sanitized));
+    setShowPhonePromptModal(false);
+
+    if (pendingWhatsAppContent) {
+      await dispatchStudyToWhatsApp(
+        {
+          topicTitle: topic.title,
+          subjectName: subject?.name,
+          courseName: course?.name,
+          content: pendingWhatsAppContent,
+          audioCount: items.filter((i) => i.type === 'audio').length,
+          photoCount: items.filter((i) => i.type === 'photo').length,
+          questionsCount: questions.length,
+        },
+        sanitized
+      );
+      showToast('WhatsApp aberto! Envie a mensagem no chat.', 'success');
+      setPendingWhatsAppContent(null);
+    }
   };
 
   const handleCopyMessage = (msgId: string, content: string) => {
@@ -447,6 +556,62 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 </div>
               </div>
 
+              {/* Seção WhatsApp para Estudos */}
+              <div className="p-3.5 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-emerald-300 flex items-center gap-1.5 text-xs">
+                    <MessageCircle className="w-4 h-4 text-emerald-400" />
+                    <span>Envio de Planos & Resumos para o WhatsApp</span>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                    1-Clique & Webhook
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-[11px] text-slate-300 font-medium block mb-1 flex items-center gap-1">
+                      <Smartphone className="w-3 h-3 text-emerald-400" />
+                      <span>Seu número de WhatsApp (com DDD):</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={whatsappPhone}
+                      onChange={(e) => setWhatsappPhone(e.target.value)}
+                      placeholder="Ex: (11) 99999-8888"
+                      className="w-full text-xs rounded-xl px-3 py-2 bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Ao clicar em "Mandar pro WhatsApp", abre com o plano já formatado.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-300 font-medium block mb-1">
+                      Webhook Opcional (n8n / Evolution API / Z-API):
+                    </label>
+                    <input
+                      type="url"
+                      value={whatsappWebhook}
+                      onChange={(e) => setWhatsappWebhook(e.target.value)}
+                      placeholder="https://seu-servidor-whatsapp/webhook"
+                      className="w-full text-xs rounded-xl px-3 py-2 bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={whatsappAutoWebhook}
+                        onChange={(e) => setWhatsappAutoWebhook(e.target.checked)}
+                        className="rounded text-emerald-500 focus:ring-emerald-400"
+                      />
+                      <span className="text-[10px] text-slate-300">
+                        Disparo 100% automático no webhook ao gerar planos
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[11px] text-slate-400">
                   🛡️ As chaves e modelos ficam salvos de forma segura no seu navegador.
@@ -578,7 +743,7 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                         {msg.providerUsed ? `⚡ ${msg.providerUsed}` : 'Tutor NoteOn'}
                       </span>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handleCopyMessage(msg.id, msg.content)}
@@ -592,11 +757,21 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSavePlanToTimeline(msg.content)}
-                          className="hover:text-emerald-400 flex items-center gap-1 cursor-pointer transition text-indigo-400 font-medium"
+                          className="hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition text-indigo-400 font-medium"
                           title="Salvar esta síntese como nota na aula"
                         >
                           <BookmarkPlus className="w-3.5 h-3.5" />
                           <span>Salvar no Caderno</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendToWhatsApp(msg.content)}
+                          className="hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition text-emerald-400 font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/20"
+                          title="Enviar este plano de estudos diretamente para seu WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Mandar pro WhatsApp</span>
                         </button>
                       </div>
                     </div>
@@ -668,6 +843,66 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
           </form>
         </div>
       </div>
+
+      {/* Modal Rápido para Informar WhatsApp caso não esteja configurado */}
+      {showPhonePromptModal && (
+        <div className="fixed inset-0 z-60 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-emerald-500/40 p-5 shadow-2xl text-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                <MessageCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Enviar para o seu WhatsApp</h3>
+                <p className="text-[11px] text-slate-400">Informe seu WhatsApp com DDD para receber o plano de estudo</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-slate-300">WhatsApp (com DDD):</label>
+              <input
+                type="tel"
+                autoFocus
+                value={promptPhoneInput}
+                onChange={(e) => setPromptPhoneInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleConfirmPromptPhone();
+                  }
+                }}
+                placeholder="Ex: 11 99999-8888"
+                className="w-full text-sm rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-slate-400 block">
+                Ficará salvo para envio com 1 clique sempre que você quiser!
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPhonePromptModal(false);
+                  setPendingWhatsAppContent(null);
+                }}
+                className="px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPromptPhone}
+                disabled={!promptPhoneInput.trim()}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-white text-xs font-bold cursor-pointer transition shadow-md shadow-emerald-600/25 flex items-center gap-1.5"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>Enviar para WhatsApp</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
