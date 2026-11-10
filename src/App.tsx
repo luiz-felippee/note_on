@@ -202,13 +202,60 @@ export default function App() {
     }
   }, [toastInfo]);
 
-  // NoteOn Cloud Sync States (Cloudflare Pages Functions + Upstash Redis)
+  // NoteOn Cloud Sync States (Cloudflare Pages Functions + D1)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(getCloudUser());
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
   const lastSyncedTimeRef = useRef<number | null>(null);
   const isInitialLoadedRef = useRef(false);
+  const skipNextAutoSyncRef = useRef(false);
   const autoSyncTimeoutRef = useRef<any>(null);
+
+  const applyCloudDataToState = async (
+    cloudData: {
+      courses?: Course[];
+      subjects?: Subject[];
+      topics?: StudyTopic[];
+      items?: TimelineItem[];
+      questions?: StudyQuestion[];
+      deletedIds?: string[];
+      lastSyncedAt?: number;
+    },
+    fallbackTimestamp?: number
+  ) => {
+    await saveMergedCloudData(cloudData);
+    skipNextAutoSyncRef.current = true;
+
+    const nextCourses = cloudData.courses || [];
+    const nextSubjects = cloudData.subjects || [];
+    const nextTopics = cloudData.topics || [];
+    const nextItems = cloudData.items || [];
+    const nextQuestions = cloudData.questions || [];
+
+    setCourses(nextCourses);
+    setSubjects(nextSubjects);
+    setTopics(nextTopics);
+    setAllItems(nextItems);
+    setAllQuestions(nextQuestions);
+
+    const deletedSet = new Set(cloudData.deletedIds || []);
+    setSelectedCourseId((prev) => {
+      if (prev && !deletedSet.has(prev) && nextCourses.some((c) => c.id === prev)) {
+        return prev;
+      }
+      return nextCourses[nextCourses.length - 1]?.id || nextCourses[0]?.id || null;
+    });
+    if (selectedTopicId && deletedSet.has(selectedTopicId)) {
+      setSelectedTopicId(null);
+    }
+    if (selectedSubjectId && deletedSet.has(selectedSubjectId)) {
+      setSelectedSubjectId(null);
+    }
+
+    const syncedAt = cloudData.lastSyncedAt || fallbackTimestamp || Date.now();
+    lastSyncedTimeRef.current = syncedAt;
+    setLastSyncedTime(syncedAt);
+  };
 
   // 1-Click Device Pairing from URL (ex: abrindo pelo link gerado no PC para o celular)
   useEffect(() => {
@@ -229,36 +276,28 @@ export default function App() {
   }, []);
 
   const handlePerformCloudSync = async (silent = false) => {
-    if (!cloudUser || !isInitialLoadedRef.current) return;
+    const activeUser = cloudUser || getCloudUser();
+    if (!activeUser || !isInitialLoadedRef.current) return;
     setIsSyncingCloud(true);
     try {
+      const [dbCourses, dbSubjects, dbTopics, dbItems, dbQuestions] = await Promise.all([
+        getAllCourses(),
+        getAllSubjects(),
+        getAllTopics(),
+        getAllItems(),
+        getAllQuestions(),
+      ]);
+
       const res = await syncWithCloud({
-        courses,
-        subjects,
-        topics,
-        items: allItems,
-        questions: allQuestions,
+        courses: dbCourses.length > 0 || courses.length === 0 ? dbCourses : courses,
+        subjects: dbSubjects.length > 0 || subjects.length === 0 ? dbSubjects : subjects,
+        topics: dbTopics.length > 0 || topics.length === 0 ? dbTopics : topics,
+        items: dbItems.length > 0 || allItems.length === 0 ? dbItems : allItems,
+        questions: dbQuestions.length > 0 || allQuestions.length === 0 ? dbQuestions : allQuestions,
       });
 
       if (res && res.data) {
-        await saveMergedCloudData(res.data);
-        setCourses(res.data.courses || []);
-        setSubjects(res.data.subjects || []);
-        setTopics(res.data.topics || []);
-        setAllItems(res.data.items || []);
-        setAllQuestions(res.data.questions || []);
-
-        const deletedSet = new Set(res.data.deletedIds || []);
-        if (selectedTopicId && deletedSet.has(selectedTopicId)) {
-          setSelectedTopicId(null);
-        }
-        if (selectedSubjectId && deletedSet.has(selectedSubjectId)) {
-          setSelectedSubjectId(null);
-        }
-
-        const syncedAt = res.data.lastSyncedAt || Date.now();
-        lastSyncedTimeRef.current = syncedAt;
-        setLastSyncedTime(syncedAt);
+        await applyCloudDataToState(res.data);
 
         if (!silent) {
           showToast('☁️ NoteOn sincronizado com a nuvem!');
@@ -266,14 +305,21 @@ export default function App() {
       }
     } catch (err: any) {
       console.warn('Erro ao sincronizar com a nuvem:', err);
+      if (!silent) {
+        showToast(`⚠️ Falha ao sincronizar: ${err.message || 'Tente novamente'}`, 'info');
+      }
     } finally {
       setIsSyncingCloud(false);
     }
   };
 
-  // Push Automático de Alta Velocidade (Debounce de 700ms após qualquer alteração no PC ou celular)
+  // Push Automático de Alta Velocidade (Debounce de 500ms após qualquer alteração local no PC ou celular)
   useEffect(() => {
     if (!cloudUser || !isInitialLoadedRef.current) return;
+    if (skipNextAutoSyncRef.current) {
+      skipNextAutoSyncRef.current = false;
+      return;
+    }
 
     if (autoSyncTimeoutRef.current) {
       clearTimeout(autoSyncTimeoutRef.current);
@@ -281,7 +327,7 @@ export default function App() {
 
     autoSyncTimeoutRef.current = setTimeout(() => {
       handlePerformCloudSync(true);
-    }, 700);
+    }, 500);
 
     return () => {
       if (autoSyncTimeoutRef.current) {
@@ -290,7 +336,7 @@ export default function App() {
     };
   }, [courses, subjects, topics, allItems, allQuestions, cloudUser]);
 
-  // Polling em Background Assíncrono Contínuo (Realtime Sync PC ↔ Celular a cada 3.5 segundos)
+  // Polling em Background Assíncrono Contínuo (Realtime Sync PC ↔ Celular a cada 2 segundos)
   useEffect(() => {
     if (!cloudUser) return;
 
@@ -302,28 +348,11 @@ export default function App() {
         const { serverLastSyncedAt } = await checkCloudVersion();
         const localLast = lastSyncedTimeRef.current || 0;
 
-        // Se o servidor tiver versão mais recente que o último sync local
-        if (serverLastSyncedAt && serverLastSyncedAt > localLast + 500) {
+        // Se o servidor tiver versão diferente/mais recente que o último sync local
+        if (serverLastSyncedAt && serverLastSyncedAt > localLast) {
           const freshData = await pullFromCloud();
           if (freshData) {
-            await saveMergedCloudData(freshData);
-            setCourses(freshData.courses || []);
-            setSubjects(freshData.subjects || []);
-            setTopics(freshData.topics || []);
-            setAllItems(freshData.items || []);
-            setAllQuestions(freshData.questions || []);
-
-            const deletedSet = new Set(freshData.deletedIds || []);
-            if (selectedTopicId && deletedSet.has(selectedTopicId)) {
-              setSelectedTopicId(null);
-            }
-            if (selectedSubjectId && deletedSet.has(selectedSubjectId)) {
-              setSelectedSubjectId(null);
-            }
-
-            const newTime = freshData.lastSyncedAt || serverLastSyncedAt;
-            lastSyncedTimeRef.current = newTime;
-            setLastSyncedTime(newTime);
+            await applyCloudDataToState(freshData, serverLastSyncedAt);
           }
         }
       } catch (_) {
@@ -331,22 +360,33 @@ export default function App() {
       } finally {
         isPolling = false;
       }
-    }, 2500);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [cloudUser, isSyncingCloud]);
 
-  // Sincroniza imediatamente ao abrir/focar a janela ou desbloquear a tela do celular
+  // Ao focar a aba/janela ou desbloquear a tela do celular, puxa primeiro da nuvem e sincroniza!
   useEffect(() => {
-    const onFocus = () => {
-      if (cloudUser && isInitialLoadedRef.current) {
+    const syncOnWake = async () => {
+      const activeUser = cloudUser || getCloudUser();
+      if (!activeUser || !isInitialLoadedRef.current || isSyncingCloud) return;
+      try {
+        const freshData = await pullFromCloud();
+        if (freshData) {
+          await applyCloudDataToState(freshData);
+        }
+      } catch (_) {
         handlePerformCloudSync(true);
       }
     };
 
+    const onFocus = () => {
+      syncOnWake();
+    };
+
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && cloudUser && isInitialLoadedRef.current) {
-        handlePerformCloudSync(true);
+      if (document.visibilityState === 'visible') {
+        syncOnWake();
       }
     };
 
@@ -357,7 +397,7 @@ export default function App() {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [cloudUser]);
+  }, [cloudUser, isSyncingCloud]);
 
   // Navegar a partir da Pesquisa Global diretamente para a aula e focar no item
   const handleNavigateFromGlobalSearch = (
@@ -501,6 +541,7 @@ export default function App() {
       getAllItems(),
       getAllQuestions(),
     ]);
+    skipNextAutoSyncRef.current = true;
     setCourses(crs);
     setSubjects(subjs);
     setTopics(tps);
@@ -508,13 +549,14 @@ export default function App() {
     setAllQuestions(qsts);
 
     setSelectedCourseId((prev) =>
-      prev && crs.some((c) => c.id === prev) ? prev : crs[0]?.id || null
+      prev && crs.some((c) => c.id === prev) ? prev : crs[crs.length - 1]?.id || crs[0]?.id || null
     );
 
     isInitialLoadedRef.current = true;
 
     // Sincronização inicial com a nuvem ao carregar a página
-    if (cloudUser) {
+    const activeUser = cloudUser || getCloudUser();
+    if (activeUser) {
       try {
         const res = await syncWithCloud({
           courses: crs,
@@ -525,13 +567,7 @@ export default function App() {
         });
 
         if (res && res.data) {
-          await saveMergedCloudData(res.data);
-          setCourses(res.data.courses || []);
-          setSubjects(res.data.subjects || []);
-          setTopics(res.data.topics || []);
-          setAllItems(res.data.items || []);
-          setAllQuestions(res.data.questions || []);
-          setLastSyncedTime(Date.now());
+          await applyCloudDataToState(res.data);
         }
       } catch (err: any) {
         console.warn('Falha no sync inicial com nuvem:', err);
@@ -542,6 +578,17 @@ export default function App() {
   useEffect(() => {
     reloadAllData();
   }, []);
+
+  // Ensure selectedCourseId is always valid when courses list updates
+  useEffect(() => {
+    if (courses.length === 0) {
+      if (selectedCourseId !== null) setSelectedCourseId(null);
+      return;
+    }
+    if (!selectedCourseId || !courses.some((c) => c.id === selectedCourseId)) {
+      setSelectedCourseId(courses[courses.length - 1]?.id || courses[0]?.id || null);
+    }
+  }, [courses, selectedCourseId]);
 
   // Update selected Subject when Course changes
   useEffect(() => {
@@ -818,15 +865,77 @@ export default function App() {
     audioWaveform?: number[];
     customTimestampMs?: number;
   }) => {
-    const targetTopicId = params.topicIdOverride || selectedTopicId;
-    const targetSubjectId = params.subjectIdOverride || selectedSubjectId;
-    if (!targetSubjectId || !targetTopicId) return;
-
-    const targetCourseId =
+    let targetTopicId = params.topicIdOverride || selectedTopicId;
+    let targetSubjectId = params.subjectIdOverride || selectedSubjectId;
+    let targetCourseId =
       params.courseIdOverride ||
       selectedCourseId ||
       subjects.find((s) => s.id === targetSubjectId)?.courseId ||
-      undefined;
+      courses[0]?.id;
+
+    // Se nenhuma aula ou matéria estiver selecionada (ex: após exclusão), resolve ou cria automaticamente para nunca perder o salvamento
+    if (!targetSubjectId || !targetTopicId) {
+      const nowInit = Date.now();
+      if (!targetCourseId) {
+        const fallbackCourse: Course = {
+          id: `course-${nowInit}`,
+          name: 'Meus Estudos',
+          color: '#6366f1',
+          createdAt: nowInit,
+          updatedAt: nowInit,
+        };
+        await saveCourse(fallbackCourse);
+        setCourses((prev) => [...prev, fallbackCourse]);
+        setSelectedCourseId(fallbackCourse.id);
+        targetCourseId = fallbackCourse.id;
+      }
+
+      if (!targetSubjectId) {
+        const existingSubj =
+          subjects.find((s) => s.courseId === targetCourseId) || subjects[0];
+        if (existingSubj) {
+          targetSubjectId = existingSubj.id;
+        } else {
+          const fallbackSubj: Subject = {
+            id: `subj-${nowInit + 1}`,
+            courseId: targetCourseId,
+            name: 'Geral',
+            color: '#6366f1',
+            icon: 'BookOpen',
+            createdAt: nowInit + 1,
+            updatedAt: nowInit + 1,
+          };
+          await saveSubject(fallbackSubj);
+          setSubjects((prev) => [...prev, fallbackSubj]);
+          targetSubjectId = fallbackSubj.id;
+        }
+        setSelectedSubjectId(targetSubjectId);
+      }
+
+      if (!targetTopicId) {
+        const existingTop =
+          topics.find((t) => t.subjectId === targetSubjectId) || topics[0];
+        if (existingTop) {
+          targetTopicId = existingTop.id;
+        } else {
+          const fallbackTop: StudyTopic = {
+            id: `topic-${nowInit + 2}`,
+            courseId: targetCourseId,
+            subjectId: targetSubjectId,
+            title: 'Aula 01',
+            date: new Date().toISOString().slice(0, 10),
+            startTime: new Date().toLocaleTimeString('pt-BR'),
+            studyDurationSeconds: 0,
+            createdAt: nowInit + 2,
+            updatedAt: nowInit + 2,
+          };
+          await saveTopic(fallbackTop);
+          setTopics((prev) => [fallbackTop, ...prev]);
+          targetTopicId = fallbackTop.id;
+        }
+        setSelectedTopicId(targetTopicId);
+      }
+    }
 
     const nowMs = params.customTimestampMs || Date.now();
     const dateObj = new Date(nowMs);

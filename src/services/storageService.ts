@@ -135,7 +135,7 @@ export async function ensureInitialSeedData(): Promise<void> {
   const hasSeeded = localStorage.getItem('noteon_has_seeded_v1');
   const db = await getLocalDB();
   const existingCourses = await db.getAll('courses');
-  const now = Date.now();
+  const now = 1700000000000; // Fixed baseline timestamp for seed data so it never overrides cloud data
 
   let defaultCourseId = 'course-medicina';
 
@@ -382,6 +382,7 @@ export async function saveTimelineItem(item: TimelineItem): Promise<TimelineItem
   const db = await getLocalDB();
   const toSave: TimelineItem = {
     ...item,
+    updatedAt: Date.now(),
     syncStatus: item.syncStatus || 'local',
   };
   await db.put('items', toSave);
@@ -407,8 +408,12 @@ export async function getAllQuestions(): Promise<StudyQuestion[]> {
 
 export async function saveQuestion(question: StudyQuestion): Promise<StudyQuestion> {
   const db = await getLocalDB();
-  await db.put('questions', question);
-  return question;
+  const toSave: StudyQuestion = {
+    ...question,
+    updatedAt: Date.now(),
+  };
+  await db.put('questions', toSave);
+  return toSave;
 }
 
 export async function saveQuestionsBatch(questions: StudyQuestion[]): Promise<StudyQuestion[]> {
@@ -496,7 +501,7 @@ export async function saveMergedCloudData(data: {
   const db = await getLocalDB();
   const deletedSet = new Set<string>(data.deletedIds || []);
 
-  // 1. Remover do banco local qualquer item excluído
+  // 1. Remover do banco local qualquer item explicitamente excluído
   for (const id of deletedSet) {
     try {
       await Promise.all([
@@ -509,20 +514,68 @@ export async function saveMergedCloudData(data: {
     } catch (_) {}
   }
 
-  // 2. Salvar apenas os itens válidos que não foram marcados como excluídos
-  for (const c of data.courses || []) {
-    if (!deletedSet.has(c.id)) await db.put('courses', c);
+  const validCourses = (data.courses || []).filter((c) => c && !deletedSet.has(c.id));
+  const validSubjects = (data.subjects || []).filter((s) => s && !deletedSet.has(s.id));
+  const validTopics = (data.topics || []).filter((t) => t && !deletedSet.has(t.id));
+  const validItems = (data.items || []).filter((i) => i && !deletedSet.has(i.id));
+  const validQuestions = (data.questions || []).filter((q) => q && !deletedSet.has(q.id));
+
+  const hasAnyCloudState =
+    deletedSet.size > 0 ||
+    validCourses.length > 0 ||
+    validSubjects.length > 0 ||
+    validTopics.length > 0 ||
+    validItems.length > 0 ||
+    validQuestions.length > 0;
+
+  // 2. Se a nuvem possui estado válido, remover itens órfãos locais que não existem na nuvem
+  if (hasAnyCloudState) {
+    const courseIds = new Set(validCourses.map((c) => c.id));
+    const subjectIds = new Set(validSubjects.map((s) => s.id));
+    const topicIds = new Set(validTopics.map((t) => t.id));
+    const itemIds = new Set(validItems.map((i) => i.id));
+    const questionIds = new Set(validQuestions.map((q) => q.id));
+
+    const [localCourses, localSubjects, localTopics, localItems, localQuestions] =
+      await Promise.all([
+        db.getAllKeys('courses'),
+        db.getAllKeys('subjects'),
+        db.getAllKeys('topics'),
+        db.getAllKeys('items'),
+        db.getAllKeys('questions'),
+      ]);
+
+    for (const k of localCourses) {
+      if (!courseIds.has(String(k))) await db.delete('courses', k);
+    }
+    for (const k of localSubjects) {
+      if (!subjectIds.has(String(k))) await db.delete('subjects', k);
+    }
+    for (const k of localTopics) {
+      if (!topicIds.has(String(k))) await db.delete('topics', k);
+    }
+    for (const k of localItems) {
+      if (!itemIds.has(String(k))) await db.delete('items', k);
+    }
+    for (const k of localQuestions) {
+      if (!questionIds.has(String(k))) await db.delete('questions', k);
+    }
   }
-  for (const s of data.subjects || []) {
-    if (!deletedSet.has(s.id)) await db.put('subjects', s);
+
+  // 3. Salvar os itens válidos vindos da nuvem
+  for (const c of validCourses) {
+    await db.put('courses', c);
   }
-  for (const t of data.topics || []) {
-    if (!deletedSet.has(t.id)) await db.put('topics', t);
+  for (const s of validSubjects) {
+    await db.put('subjects', s);
   }
-  for (const i of data.items || []) {
-    if (!deletedSet.has(i.id)) await db.put('items', i);
+  for (const t of validTopics) {
+    await db.put('topics', t);
   }
-  for (const q of data.questions || []) {
-    if (!deletedSet.has(q.id)) await db.put('questions', q);
+  for (const i of validItems) {
+    await db.put('items', i);
+  }
+  for (const q of validQuestions) {
+    await db.put('questions', q);
   }
 }

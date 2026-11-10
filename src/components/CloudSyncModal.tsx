@@ -64,13 +64,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       if (tab === 'register') {
         const user = await cloudRegister(email, password);
         onUserChanged(user);
-        setSuccessMsg('Conta criada com sucesso! Sincronizando dados...');
-        await onPerformSync();
+        setSuccessMsg('Conta conectada! Sincronizando dados...');
       } else {
         const user = await cloudLogin(email, password);
         onUserChanged(user);
-        setSuccessMsg('Login realizado com sucesso! Sincronizando dados...');
-        await onPerformSync();
+        setSuccessMsg('Login realizado! Sincronizando dados...');
       }
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
@@ -252,7 +250,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
               <button
                 type="button"
-                onClick={onPerformSync}
+                onClick={() => onPerformSync()}
                 disabled={isSyncing}
                 className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer transition disabled:opacity-50"
               >

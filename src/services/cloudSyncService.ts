@@ -141,8 +141,9 @@ export async function syncWithCloud(localData: SyncPayload): Promise<{
     deletedIds: Array.from(new Set([...(localData.deletedIds || []), ...Array.from(getDeletedIds())])),
   };
 
-  const res = await fetch('/api/sync', {
+  const res = await fetch(`/api/sync?_t=${Date.now()}`, {
     method: 'POST',
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
@@ -165,8 +166,9 @@ export async function checkCloudVersion(): Promise<{ hasServerChanges: boolean; 
   if (!token) return { hasServerChanges: false, serverLastSyncedAt: 0 };
 
   try {
-    const res = await fetch('/api/sync?check=true', {
+    const res = await fetch(`/api/sync?check=true&_t=${Date.now()}`, {
       method: 'GET',
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -190,8 +192,9 @@ export async function pullFromCloud(): Promise<SyncPayload & { lastSyncedAt?: nu
   const token = getCloudToken();
   if (!token) throw new Error('Não autenticado na nuvem.');
 
-  const res = await fetch('/api/sync', {
+  const res = await fetch(`/api/sync?_t=${Date.now()}`, {
     method: 'GET',
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${token}`,
     },

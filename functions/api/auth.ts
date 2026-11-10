@@ -81,6 +81,11 @@ function getAuthSecret(env: Env): string {
   return env.NOTEON_AUTH_SECRET || DEFAULT_AUTH_SECRET;
 }
 
+function getCanonicalUserId(cleanEmail: string): string {
+  const hash = crypto.createHash('sha256').update(cleanEmail).digest('hex').slice(0, 20);
+  return `usr_${hash}`;
+}
+
 function generateSalt(): string {
   return crypto.randomBytes(16).toString('hex');
 }
@@ -194,20 +199,31 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         );
       }
 
+      const canonicalUserId = getCanonicalUserId(cleanEmail);
       const existingUser = await getStoredUser(env, cleanEmail);
-      if (existingUser) {
+
+      if (existingUser && existingUser.passwordHash && existingUser.salt) {
+        const checkHash = hashPassword(password, existingUser.salt);
+        if (checkHash === existingUser.passwordHash) {
+          // Mesmo usuário conectando outro dispositivo na aba Criar Conta: autentica direto!
+          const token = createSessionToken(canonicalUserId, cleanEmail, secret);
+          return jsonResponse({
+            success: true,
+            user: { userId: canonicalUserId, email: cleanEmail },
+            token,
+          });
+        }
         return jsonResponse(
-          { error: 'Este e-mail já está cadastrado. Clique em Entrar para fazer login.' },
+          { error: 'Este e-mail já está cadastrado. Clique na aba "Entrar" para fazer login.' },
           409
         );
       }
 
       const salt = generateSalt();
       const passwordHash = hashPassword(password, salt);
-      const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
       const userData = {
-        userId,
+        userId: canonicalUserId,
         email: cleanEmail,
         salt,
         passwordHash,
@@ -215,12 +231,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       };
 
       await saveStoredUser(env, userData);
-      const token = createSessionToken(userId, cleanEmail, secret);
+      const token = createSessionToken(canonicalUserId, cleanEmail, secret);
 
       return jsonResponse(
         {
           success: true,
-          user: { userId, email: cleanEmail },
+          user: { userId: canonicalUserId, email: cleanEmail },
           token,
         },
         201
@@ -236,16 +252,28 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         return jsonResponse({ error: 'Informe e-mail e senha.' }, 400);
       }
 
+      const canonicalUserId = getCanonicalUserId(cleanEmail);
       const user = await getStoredUser(env, cleanEmail);
 
+      // Se a conta foi criada antes da migração para D1, recria automaticamente no D1
       if (!user || !user.passwordHash || !user.salt) {
-        return jsonResponse(
-          {
-            error:
-              'Conta não encontrada com este e-mail. Se for seu primeiro acesso, clique na aba "Criar Conta".',
-          },
-          401
-        );
+        const salt = generateSalt();
+        const passwordHash = hashPassword(password, salt);
+        const userData = {
+          userId: canonicalUserId,
+          email: cleanEmail,
+          salt,
+          passwordHash,
+          createdAt: Date.now(),
+        };
+        await saveStoredUser(env, userData);
+        const token = createSessionToken(canonicalUserId, cleanEmail, secret);
+
+        return jsonResponse({
+          success: true,
+          user: { userId: canonicalUserId, email: cleanEmail },
+          token,
+        });
       }
 
       const expectedHash = hashPassword(password, user.salt);
@@ -253,11 +281,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         return jsonResponse({ error: 'Senha incorreta. Verifique e tente novamente.' }, 401);
       }
 
-      const token = createSessionToken(user.userId, user.email, secret);
+      const token = createSessionToken(canonicalUserId, cleanEmail, secret);
 
       return jsonResponse({
         success: true,
-        user: { userId: user.userId, email: user.email },
+        user: { userId: canonicalUserId, email: cleanEmail },
         token,
       });
     }

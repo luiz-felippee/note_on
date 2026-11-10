@@ -65,10 +65,16 @@ function verifySessionToken(token: string, secret: string): SessionPayload | nul
   }
 }
 
+function getCanonicalUserId(cleanEmail: string): string {
+  const hash = crypto.createHash('sha256').update(cleanEmail).digest('hex').slice(0, 20);
+  return `usr_${hash}`;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
 };
 
 function jsonResponse(data: any, status = 200) {
@@ -81,57 +87,159 @@ function jsonResponse(data: any, status = 200) {
   });
 }
 
-// Auto-migration helper from legacy KV to D1 on first access
-async function ensureMigratedFromKvToD1(env: Env, userId: string): Promise<void> {
-  if (!env.DB || !env.NOTEON_KV) return;
+const CHUNK_SIZE = 38000; // 38 KB per chunk (well below D1's 100 KB statement limit)
+const EXTERNAL_MEDIA_MARKER = '__D1_MEDIA__';
+
+async function saveMediaChunks(
+  env: Env,
+  userId: string,
+  entityId: string,
+  dataUrl: string,
+  now: number
+): Promise<void> {
+  if (!dataUrl) return;
+
+  // 1. Save in KV if available (supports up to 25 MB per value)
+  if (env.NOTEON_KV) {
+    try {
+      await env.NOTEON_KV.put(`noteon:media:${userId}:${entityId}`, dataUrl);
+    } catch (_) {}
+  }
+
+  // 2. Also save in D1 media_blobs in 38 KB chunks for strong consistency
+  if (env.DB) {
+    try {
+      await env.DB.prepare('DELETE FROM media_blobs WHERE userId = ? AND mediaId LIKE ?')
+        .bind(userId, `${entityId}#%`)
+        .run();
+
+      const statements: any[] = [];
+      const totalChunks = Math.ceil(dataUrl.length / CHUNK_SIZE);
+      for (let idx = 0; idx < totalChunks; idx++) {
+        const chunk = dataUrl.slice(idx * CHUNK_SIZE, (idx + 1) * CHUNK_SIZE);
+        const paddedIdx = String(idx).padStart(4, '0');
+        statements.push(
+          env.DB.prepare(
+            'INSERT OR REPLACE INTO media_blobs (userId, mediaId, dataUrl, createdAt) VALUES (?, ?, ?, ?)'
+          ).bind(userId, `${entityId}#${paddedIdx}`, chunk, now)
+        );
+      }
+
+      for (let i = 0; i < statements.length; i += 10) {
+        await env.DB.batch(statements.slice(i, i + 10));
+      }
+    } catch (e) {
+      console.warn('Aviso ao salvar chunks de mídia no D1:', e);
+    }
+  }
+}
+
+async function loadAllMediaForUser(env: Env, userId: string): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!env.DB) return result;
 
   try {
+    const rows = await env.DB.prepare(
+      'SELECT mediaId, dataUrl FROM media_blobs WHERE userId = ? ORDER BY mediaId ASC'
+    )
+      .bind(userId)
+      .all();
+
+    const chunksByEntity = new Map<string, string[]>();
+    for (const r of rows.results || []) {
+      const mId: string = r.mediaId || '';
+      const hashIdx = mId.lastIndexOf('#');
+      const entityId = hashIdx !== -1 ? mId.slice(0, hashIdx) : mId;
+      let list = chunksByEntity.get(entityId);
+      if (!list) {
+        list = [];
+        chunksByEntity.set(entityId, list);
+      }
+      list.push(r.dataUrl || '');
+    }
+
+    for (const [entityId, chunks] of chunksByEntity.entries()) {
+      result.set(entityId, chunks.join(''));
+    }
+  } catch (e) {
+    console.warn('Aviso ao ler chunks de mídia do D1:', e);
+  }
+
+  return result;
+}
+
+// Auto-migration helper from legacy userId or KV to canonical D1 userId
+async function ensureAccountNormalizedAndMigrated(
+  env: Env,
+  canonicalUserId: string,
+  legacyUserId: string
+): Promise<void> {
+  if (!env.DB) return;
+
+  try {
+    // 1. If legacyUserId in token differs from canonicalUserId, migrate its rows in D1
+    if (legacyUserId && legacyUserId !== canonicalUserId) {
+      await env.DB.prepare('UPDATE OR IGNORE sync_entities SET userId = ? WHERE userId = ?')
+        .bind(canonicalUserId, legacyUserId)
+        .run();
+      await env.DB.prepare('UPDATE OR IGNORE media_blobs SET userId = ? WHERE userId = ?')
+        .bind(canonicalUserId, legacyUserId)
+        .run();
+    }
+
+    // 2. Check if canonicalUserId already has rows in D1
     const countRow = await env.DB.prepare(
       'SELECT COUNT(*) as count FROM sync_entities WHERE userId = ?'
     )
-      .bind(userId)
+      .bind(canonicalUserId)
       .first();
 
-    if (countRow && countRow.count > 0) return;
+    if (countRow && Number(countRow.count) > 0) return;
 
-    // Read existing KV vault
-    const rawVault = await env.NOTEON_KV.get(`noteon:userdata:${userId}`, 'text');
-    if (!rawVault) return;
+    // 3. Migrate from KV if available
+    if (env.NOTEON_KV) {
+      const rawVault =
+        (await env.NOTEON_KV.get(`noteon:userdata:${canonicalUserId}`, 'text')) ||
+        (legacyUserId ? await env.NOTEON_KV.get(`noteon:userdata:${legacyUserId}`, 'text') : null);
 
-    const kvData = JSON.parse(rawVault);
-    const now = Date.now();
-    const deletedSet = new Set<string>(kvData.deletedIds || []);
+      if (!rawVault) return;
 
-    const statements: any[] = [];
+      const kvData = JSON.parse(rawVault);
+      const now = Date.now();
+      const deletedSet = new Set<string>(kvData.deletedIds || []);
 
-    // Migrate tombstoned items
-    for (const id of deletedSet) {
-      statements.push(
-        env.DB.prepare(
-          'INSERT OR IGNORE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?)'
-        ).bind(userId, id, 'tombstone', '{}', now, now)
-      );
-    }
-
-    // Migrate active entities
-    const types = ['courses', 'subjects', 'topics', 'items', 'questions'] as const;
-    for (const type of types) {
-      const list = kvData[type] || [];
-      for (const item of list) {
-        if (!item || !item.id || deletedSet.has(item.id)) continue;
-        const itemUpdated = item.updatedAt || item.createdAt || now;
-        statements.push(
-          env.DB.prepare(
-            'INSERT OR IGNORE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
-          ).bind(userId, item.id, type, JSON.stringify(item), itemUpdated)
-        );
+      for (const id of deletedSet) {
+        if (!id) continue;
+        try {
+          await env.DB.prepare(
+            'INSERT OR IGNORE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?)'
+          )
+            .bind(canonicalUserId, id, 'tombstone', '{}', now, now)
+            .run();
+        } catch (_) {}
       }
-    }
 
-    if (statements.length > 0) {
-      // Execute in chunks of 50 statements
-      for (let i = 0; i < statements.length; i += 50) {
-        await env.DB.batch(statements.slice(i, i + 50));
+      const types = ['courses', 'subjects', 'topics', 'items', 'questions'] as const;
+      for (const type of types) {
+        const list = kvData[type] || [];
+        for (const item of list) {
+          if (!item || !item.id || deletedSet.has(item.id)) continue;
+          const itemUpdated = Number(item.updatedAt || item.createdAt || now);
+          const itemCopy = { ...item };
+
+          if (itemCopy.mediaDataUrl && itemCopy.mediaDataUrl.length > 20000) {
+            await saveMediaChunks(env, canonicalUserId, itemCopy.id, itemCopy.mediaDataUrl, now);
+            itemCopy.mediaDataUrl = EXTERNAL_MEDIA_MARKER;
+          }
+
+          try {
+            await env.DB.prepare(
+              'INSERT OR IGNORE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
+            )
+              .bind(canonicalUserId, itemCopy.id, type, JSON.stringify(itemCopy), itemUpdated)
+              .run();
+          } catch (_) {}
+        }
       }
     }
   } catch (err) {
@@ -158,12 +266,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     );
   }
 
-  const userId = session.userId;
+  const cleanEmail = (session.email || '').trim().toLowerCase();
+  const userId = cleanEmail ? getCanonicalUserId(cleanEmail) : session.userId;
 
   try {
-    // Se D1 estiver disponível, usamos D1 com consistência forte
     if (env.DB) {
-      await ensureMigratedFromKvToD1(env, userId);
+      await ensureAccountNormalizedAndMigrated(env, userId, session.userId);
 
       const url = new URL(request.url);
       const isCheckOnly =
@@ -183,7 +291,27 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         });
       }
 
-      // 2. POST: Inserir alterações, aplicar tombstones e mesclar
+      // Ler estado atual do D1 antes de aplicar alterações para fazer diff inteligente
+      const existingQuery = await env.DB.prepare(
+        'SELECT entityId, entityType, data, updatedAt, deletedAt FROM sync_entities WHERE userId = ?'
+      )
+        .bind(userId)
+        .all();
+
+      const existingMap = new Map<
+        string,
+        { entityType: string; data: string; updatedAt: number; deletedAt: number | null }
+      >();
+      for (const r of existingQuery.results || []) {
+        existingMap.set(r.entityId, {
+          entityType: r.entityType,
+          data: r.data,
+          updatedAt: Number(r.updatedAt) || 0,
+          deletedAt: r.deletedAt ? Number(r.deletedAt) : null,
+        });
+      }
+
+      // 2. POST: Inserir apenas diferenças reais e aplicar tombstones
       if (request.method === 'POST') {
         let clientData: any = {};
         try {
@@ -193,32 +321,95 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         }
 
         const now = Date.now();
-        const clientDeletedIds: string[] = clientData.deletedIds || [];
+        const clientDeletedIds: string[] = Array.isArray(clientData.deletedIds)
+          ? clientData.deletedIds
+          : [];
+        const clientDeletedSet = new Set<string>(clientDeletedIds);
         const statements: any[] = [];
 
         // A. Aplicar exclusões: A EXCLUSÃO SEMPRE VENCE!
-        for (const id of clientDeletedIds) {
+        for (const id of clientDeletedSet) {
           if (!id) continue;
-          statements.push(
-            env.DB.prepare(
-              `INSERT INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt)
-               VALUES (?, ?, 'tombstone', '{}', ?, ?)
-               ON CONFLICT (userId, entityId)
-               DO UPDATE SET deletedAt = excluded.deletedAt, updatedAt = excluded.updatedAt`
-            ).bind(userId, id, now, now)
-          );
+          const current = existingMap.get(id);
+          // Só grava no banco se ainda não estava marcado como excluído
+          if (!current || !current.deletedAt) {
+            statements.push(
+              env.DB.prepare(
+                `INSERT INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt)
+                 VALUES (?, ?, 'tombstone', '{}', ?, ?)
+                 ON CONFLICT (userId, entityId)
+                 DO UPDATE SET deletedAt = excluded.deletedAt, updatedAt = excluded.updatedAt`
+              ).bind(userId, id, now, now)
+            );
+            statements.push(
+              env.DB.prepare('DELETE FROM media_blobs WHERE userId = ? AND mediaId LIKE ?').bind(
+                userId,
+                `${id}#%`
+              )
+            );
+          }
         }
+
+        // Verificar se a conta na nuvem já possui dados reais do usuário
+        const hasRealCloudData = existingMap.size > 0;
+        const DEMO_IDS = new Set([
+          'course-medicina',
+          'course-exatas',
+          'subj-fisiologia',
+          'subj-calculo',
+          'topic-neuro-01',
+          'item-demo-1',
+          'item-demo-2',
+          'item-demo-3',
+        ]);
 
         // B. Inserir ou atualizar entidades ativas
         const types = ['courses', 'subjects', 'topics', 'items', 'questions'] as const;
         for (const type of types) {
-          const list = clientData[type] || [];
+          const list = Array.isArray(clientData[type]) ? clientData[type] : [];
           for (const item of list) {
             if (!item || !item.id) continue;
-            // Pula se já estiver no conjunto de IDs deletados enviado
-            if (clientDeletedIds.includes(item.id)) continue;
+            // Nunca ressuscita item deletado localmente ou no servidor
+            if (clientDeletedSet.has(item.id)) continue;
+            const current = existingMap.get(item.id);
+            if (current && current.deletedAt) continue;
 
-            const itemUpdated = item.updatedAt || item.createdAt || now;
+            // Se a conta já possui dados na nuvem e este item é um seed demo que não estava na nuvem, ignora para um dispositivo novo não poluir a conta
+            if (hasRealCloudData && !current && DEMO_IDS.has(item.id)) {
+              continue;
+            }
+
+            const itemCopy = { ...item };
+            let rawMediaToSave: string | null = null;
+
+            if (
+              itemCopy.mediaDataUrl &&
+              itemCopy.mediaDataUrl !== EXTERNAL_MEDIA_MARKER &&
+              itemCopy.mediaDataUrl.length > 20000
+            ) {
+              rawMediaToSave = itemCopy.mediaDataUrl;
+              itemCopy.mediaDataUrl = EXTERNAL_MEDIA_MARKER;
+            }
+
+            const serialized = JSON.stringify(itemCopy);
+
+            // Se já existe idêntico no D1, não precisa reescrever nem alterar updatedAt!
+            if (current && current.data === serialized) {
+              continue;
+            }
+
+            // Se existir versão mais recente no D1 e o cliente enviou versão antiga (sem updatedAt maior), preserva a do D1
+            const clientItemTime = Number(item.updatedAt || item.createdAt || 0);
+            if (current && current.updatedAt > 0 && clientItemTime > 0 && clientItemTime < current.updatedAt) {
+              continue;
+            }
+
+            if (rawMediaToSave) {
+              await saveMediaChunks(env, userId, itemCopy.id, rawMediaToSave, now);
+            }
+
+            const newUpdatedAt = Math.max(now, clientItemTime);
+
             statements.push(
               env.DB.prepare(
                 `INSERT INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt)
@@ -229,14 +420,25 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
                    entityType = excluded.entityType,
                    updatedAt = excluded.updatedAt
                  WHERE sync_entities.deletedAt IS NULL`
-              ).bind(userId, item.id, type, JSON.stringify(item), itemUpdated)
+              ).bind(userId, itemCopy.id, type, serialized, newUpdatedAt)
             );
           }
         }
 
         if (statements.length > 0) {
-          for (let i = 0; i < statements.length; i += 60) {
-            await env.DB.batch(statements.slice(i, i + 60));
+          for (let i = 0; i < statements.length; i += 25) {
+            try {
+              await env.DB.batch(statements.slice(i, i + 25));
+            } catch (batchErr) {
+              // Se algum lote falhar isoladamente, executa um por um para nunca perder o restante
+              for (const stmt of statements.slice(i, i + 25)) {
+                try {
+                  await stmt.run();
+                } catch (singleErr) {
+                  console.warn('Falha ao gravar statement individual no D1:', singleErr);
+                }
+              }
+            }
           }
         }
       }
@@ -248,6 +450,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         .bind(userId)
         .all();
 
+      const mediaMap = await loadAllMediaForUser(env, userId);
+
       const courses: any[] = [];
       const subjects: any[] = [];
       const topics: any[] = [];
@@ -258,19 +462,31 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       let maxUpdated = 0;
 
       for (const row of allRows.results || []) {
-        if (row.updatedAt > maxUpdated) {
-          maxUpdated = row.updatedAt;
+        const rowUpdated = Number(row.updatedAt) || 0;
+        if (rowUpdated > maxUpdated) {
+          maxUpdated = rowUpdated;
         }
 
-        // Se estiver marcado como deletado
         if (row.deletedAt) {
           deletedIds.push(row.entityId);
           continue;
         }
 
-        // Se for ativo, desserializa e classifica pelo tipo
         try {
           const parsed = JSON.parse(row.data);
+          if (parsed.mediaDataUrl === EXTERNAL_MEDIA_MARKER) {
+            const restoredMedia =
+              mediaMap.get(row.entityId) ||
+              (env.NOTEON_KV
+                ? await env.NOTEON_KV.get(`noteon:media:${userId}:${row.entityId}`, 'text')
+                : null);
+            if (restoredMedia) {
+              parsed.mediaDataUrl = restoredMedia;
+            } else {
+              delete parsed.mediaDataUrl;
+            }
+          }
+
           if (row.entityType === 'courses') courses.push(parsed);
           else if (row.entityType === 'subjects') subjects.push(parsed);
           else if (row.entityType === 'topics') topics.push(parsed);

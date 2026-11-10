@@ -89,6 +89,7 @@ export interface TimelineItem {
   repetitionHistoryCount?: number;
   photoHighlights?: PhotoHighlightStroke[];
   syncStatus?: 'local' | 'syncing' | 'synced';
+  updatedAt?: number;
 }
 
 export type QuestionType = 'multiple_choice' | 'discursive';
@@ -109,6 +110,7 @@ export interface StudyQuestion {
   userRevealedDiscursive?: boolean;
   userNotes?: string;
   createdAt: number;
+  updatedAt?: number;
   importantForExam?: boolean;
 }
 
