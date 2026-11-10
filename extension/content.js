@@ -8,6 +8,8 @@ function isNoteOnPage() {
     return (
       host === 'localhost' ||
       host === '127.0.0.1' ||
+      host.endsWith('pages.dev') ||
+      host.includes('cloudflare') ||
       host.endsWith('vercel.app') ||
       host.includes('noteon') ||
       href.includes('note_on') ||

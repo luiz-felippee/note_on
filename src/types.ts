@@ -112,9 +112,12 @@ export interface StudyQuestion {
   importantForExam?: boolean;
 }
 
-export type AiProviderName = 'nvidia' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'local';
+export type AiProviderName = 'cloudflare' | 'nvidia' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'local';
 
 export interface AiProviderConfig {
+  cloudflareAccountId?: string;
+  cloudflareApiToken?: string;
+  cloudflareModel?: string;
   nvidiaApiKey?: string;
   nvidiaModel?: string;
   geminiApiKey?: string;

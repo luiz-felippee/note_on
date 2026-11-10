@@ -16,6 +16,7 @@ import {
   ChevronDown,
   MessageCircle,
   Smartphone,
+  Cloud,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -372,6 +373,7 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
   };
 
   const configuredCount = [
+    (keysConfig.cloudflareAccountId?.trim() && keysConfig.cloudflareApiToken?.trim()) ? 'cf' : '',
     keysConfig.nvidiaApiKey,
     keysConfig.geminiApiKey,
     keysConfig.groqApiKey,
@@ -482,6 +484,57 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
 
               {/* Grid with Providers */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* 0. Cloudflare Workers AI */}
+                <div className="p-3 rounded-2xl border border-orange-500/30 bg-orange-950/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-orange-300 flex items-center gap-1.5">
+                      <Cloud className="w-3.5 h-3.5 text-orange-400" />
+                      <span>Cloudflare Workers AI</span>
+                    </span>
+                    <a
+                      href="https://dash.cloudflare.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-orange-400 hover:underline flex items-center gap-0.5 text-[10px]"
+                    >
+                      <span>Obter Token Cloudflare</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <input
+                      type="text"
+                      value={keysConfig.cloudflareAccountId || ''}
+                      onChange={(e) => setKeysConfig({ ...keysConfig, cloudflareAccountId: e.target.value })}
+                      placeholder="Account ID (Cloudflare)"
+                      className="w-full text-xs rounded-xl px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-orange-500"
+                    />
+                    <input
+                      type="password"
+                      value={keysConfig.cloudflareApiToken || ''}
+                      onChange={(e) => setKeysConfig({ ...keysConfig, cloudflareApiToken: e.target.value })}
+                      placeholder="API Token (Workers AI)"
+                      className="w-full text-xs rounded-xl px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Modelo Cloudflare:</label>
+                    <select
+                      value={keysConfig.cloudflareModel || AVAILABLE_MODELS.cloudflare[0].id}
+                      onChange={(e) => setKeysConfig({ ...keysConfig, cloudflareModel: e.target.value })}
+                      className="w-full text-xs rounded-xl px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                      {AVAILABLE_MODELS.cloudflare.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 {/* 1. NVIDIA NIM */}
                 <div className="p-3 rounded-2xl border border-emerald-500/30 bg-emerald-950/10 space-y-2">
                   <div className="flex items-center justify-between">
@@ -810,7 +863,8 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                   : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40'
                 }`}
             >
-              <option value="auto">⚡ Auto-Failover (NVIDIA + Gemini + Groq)</option>
+              <option value="auto">⚡ Auto-Failover (Cloudflare + NVIDIA + Gemini + Groq)</option>
+              <option value="cloudflare">☁️ Cloudflare Workers AI ({keysConfig.cloudflareModel?.split('/').pop() || 'Llama 3.3'})</option>
               <option value="nvidia">🟢 NVIDIA NIM ({keysConfig.nvidiaModel?.split('/')[1] || 'Llama 3.3'})</option>
               <option value="gemini">🔵 Google Gemini ({keysConfig.geminiModel || '1.5 Flash'})</option>
               <option value="groq">🟠 Groq ({keysConfig.groqModel?.split('-')[0] || 'Llama 3.3'})</option>

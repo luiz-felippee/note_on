@@ -1,2 +1,14 @@
-/*    /index.html   200
-
+{
+  "version": 1,
+  "include": [
+    "/api/*"
+  ],
+  "exclude": [
+    "/assets/*",
+    "/noteon-extension.zip",
+    "/favicon.ico",
+    "/manifest.webmanifest",
+    "/sw.js",
+    "/workbox-*.js"
+  ]
+}

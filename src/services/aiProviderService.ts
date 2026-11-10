@@ -10,6 +10,9 @@ import {
 } from '../types';
 
 // Storage keys
+const KEY_CLOUDFLARE_ACCOUNT_ID = 'noteon_cloudflare_account_id';
+const KEY_CLOUDFLARE_API_TOKEN = 'noteon_cloudflare_api_token';
+const KEY_CLOUDFLARE_MODEL = 'noteon_cloudflare_model';
 const KEY_NVIDIA = 'noteon_nvidia_api_key';
 const KEY_NVIDIA_MODEL = 'noteon_nvidia_model';
 const KEY_GEMINI = 'noteon_gemini_api_key';
@@ -23,6 +26,13 @@ const KEY_OPENAI_MODEL = 'noteon_openai_model';
 const KEY_ACTIVE_SELECTION = 'noteon_active_provider_selection';
 
 export const AVAILABLE_MODELS = {
+  cloudflare: [
+    { id: '@cf/meta/llama-3.3-70b-instruct', name: 'Cloudflare Llama 3.3 70B (Recomendado)', desc: 'Excelente raciocínio na edge global Cloudflare' },
+    { id: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', name: 'Cloudflare DeepSeek R1 32B', desc: 'Raciocínio lógico e dedutivo profundo' },
+    { id: '@cf/meta/llama-3.1-8b-instruct', name: 'Cloudflare Llama 3.1 8B', desc: 'Ultra veloz em milissegundos' },
+    { id: '@cf/qwen/qwen2.5-72b-instruct', name: 'Cloudflare Qwen 2.5 72B', desc: 'Altíssima precisão e conhecimento geral' },
+    { id: '@cf/mistral/mistral-7b-instruct-v0.2', name: 'Cloudflare Mistral 7B', desc: 'Leve e eficiente' },
+  ],
   nvidia: [
     { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B Instruct (Recomendado)', desc: 'Excelente raciocínio e síntese' },
     { id: 'deepseek-ai/deepseek-r1', name: 'DeepSeek R1 (Raciocínio Lógico)', desc: 'Raciocínio profundo com cadeia de pensamento' },
@@ -58,6 +68,9 @@ export const AVAILABLE_MODELS = {
 export function getStoredAiKeys(): AiProviderConfig {
   try {
     return {
+      cloudflareAccountId: localStorage.getItem(KEY_CLOUDFLARE_ACCOUNT_ID) || '',
+      cloudflareApiToken: localStorage.getItem(KEY_CLOUDFLARE_API_TOKEN) || '',
+      cloudflareModel: localStorage.getItem(KEY_CLOUDFLARE_MODEL) || AVAILABLE_MODELS.cloudflare[0].id,
       nvidiaApiKey: localStorage.getItem(KEY_NVIDIA) || '',
       nvidiaModel: localStorage.getItem(KEY_NVIDIA_MODEL) || AVAILABLE_MODELS.nvidia[0].id,
       geminiApiKey: localStorage.getItem(KEY_GEMINI) || '',
@@ -78,6 +91,16 @@ export function getStoredAiKeys(): AiProviderConfig {
 
 export function saveStoredAiKeys(config: Partial<AiProviderConfig>): void {
   try {
+    if (config.cloudflareAccountId !== undefined) {
+      if (config.cloudflareAccountId.trim()) localStorage.setItem(KEY_CLOUDFLARE_ACCOUNT_ID, config.cloudflareAccountId.trim());
+      else localStorage.removeItem(KEY_CLOUDFLARE_ACCOUNT_ID);
+    }
+    if (config.cloudflareApiToken !== undefined) {
+      if (config.cloudflareApiToken.trim()) localStorage.setItem(KEY_CLOUDFLARE_API_TOKEN, config.cloudflareApiToken.trim());
+      else localStorage.removeItem(KEY_CLOUDFLARE_API_TOKEN);
+    }
+    if (config.cloudflareModel !== undefined) localStorage.setItem(KEY_CLOUDFLARE_MODEL, config.cloudflareModel);
+
     if (config.nvidiaApiKey !== undefined) {
       if (config.nvidiaApiKey.trim()) localStorage.setItem(KEY_NVIDIA, config.nvidiaApiKey.trim());
       else localStorage.removeItem(KEY_NVIDIA);
@@ -405,6 +428,54 @@ async function callOpenRouterOrOpenAi(
   return reply.trim();
 }
 
+// 5. Cloudflare Workers AI Call
+async function callCloudflareWorkersAi(
+  accountId: string,
+  apiToken: string,
+  model: string,
+  userMessage: string,
+  contextPrompt: string
+): Promise<string> {
+  const cleanAccount = accountId.trim();
+  const cleanToken = apiToken.trim();
+  const cleanModel = (model || '@cf/meta/llama-3.3-70b-instruct').replace(/^@cf\//, '');
+  const url = `https://api.cloudflare.com/client/v4/accounts/${cleanAccount}/ai/run/@cf/${cleanModel}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${cleanToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: [
+        {
+          role: 'system',
+          content: `${contextPrompt}\nVocê é o Tutor Pedagógico NoteOn executando na infraestrutura Cloudflare. Responda em português brasileiro com excelente síntese e orientação de estudos.`,
+        },
+        {
+          role: 'user',
+          content: userMessage,
+        },
+      ],
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Cloudflare Workers AI Error (${res.status}): ${errorText}`);
+  }
+
+  const data = await res.json();
+  const reply = data.result?.response || data.result?.text || data.response || '';
+  if (!reply) {
+    throw new Error('Cloudflare Workers AI não retornou texto na resposta.');
+  }
+
+  return reply.trim();
+}
+
 // 5. Fallback Local Engine (Offline)
 function generateLocalStudyAssistantReply(
   userMessage: string,
@@ -515,6 +586,19 @@ export async function executeAiStudyRequest(params: {
     hasKey: boolean;
     runner: () => Promise<string>;
   }> = [
+    {
+      name: 'cloudflare',
+      label: `Cloudflare Workers AI (${keys.cloudflareModel?.split('/').pop() || 'Llama 3.3 70B'})`,
+      hasKey: Boolean(keys.cloudflareAccountId?.trim() && keys.cloudflareApiToken?.trim()),
+      runner: () =>
+        callCloudflareWorkersAi(
+          keys.cloudflareAccountId!.trim(),
+          keys.cloudflareApiToken!.trim(),
+          keys.cloudflareModel || '@cf/meta/llama-3.3-70b-instruct',
+          userMessage,
+          contextPrompt
+        ),
+    },
     {
       name: 'nvidia',
       label: `NVIDIA NIM (${keys.nvidiaModel || 'Llama 3.3 70B'})`,

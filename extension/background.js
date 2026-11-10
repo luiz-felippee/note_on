@@ -10,6 +10,8 @@ async function findNoteOnTabs() {
     return (
       url.includes('localhost') ||
       url.includes('127.0.0.1') ||
+      url.includes('pages.dev') ||
+      url.includes('cloudflare') ||
       url.includes('vercel.app') ||
       url.includes('noteon') ||
       url.includes('note_on') ||
