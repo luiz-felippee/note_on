@@ -2,6 +2,31 @@ import { Course, Subject, StudyTopic, TimelineItem, StudyQuestion } from '../typ
 
 const CLOUD_TOKEN_KEY = 'noteon_cloud_jwt_v1';
 const CLOUD_USER_KEY = 'noteon_cloud_user_v1';
+const CLOUD_DELETED_IDS_KEY = 'noteon_deleted_ids_v1';
+
+export function getDeletedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(CLOUD_DELETED_IDS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function recordDeletion(ids: string | string[]): void {
+  try {
+    const current = getDeletedIds();
+    const idArray = Array.isArray(ids) ? ids : [ids];
+    for (const id of idArray) {
+      if (id) current.add(id);
+    }
+    // Guarda os últimos 2000 tombstones para manter o storage limpo
+    const trimmed = Array.from(current).slice(-2000);
+    localStorage.setItem(CLOUD_DELETED_IDS_KEY, JSON.stringify(trimmed));
+  } catch (err) {
+    console.warn('Erro ao salvar deletedIds:', err);
+  }
+}
 
 export interface CloudUser {
   userId: string;
@@ -99,6 +124,7 @@ export interface SyncPayload {
   topics: StudyTopic[];
   items: TimelineItem[];
   questions: StudyQuestion[];
+  deletedIds?: string[];
 }
 
 export async function syncWithCloud(localData: SyncPayload): Promise<{
@@ -110,13 +136,18 @@ export async function syncWithCloud(localData: SyncPayload): Promise<{
     throw new Error('Usuário não está conectado na nuvem.');
   }
 
+  const payloadWithDeletions: SyncPayload = {
+    ...localData,
+    deletedIds: Array.from(new Set([...(localData.deletedIds || []), ...Array.from(getDeletedIds())])),
+  };
+
   const res = await fetch('/api/sync', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(localData),
+    body: JSON.stringify(payloadWithDeletions),
   });
 
   return await parseResponseJson(res, 'Falha na sincronização.');

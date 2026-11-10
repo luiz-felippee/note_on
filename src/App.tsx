@@ -100,6 +100,7 @@ import {
   checkCloudVersion,
   pullFromCloud,
   saveCloudSession,
+  recordDeletion,
 } from './services/cloudSyncService';
 
 const SUBJECT_COLORS = [
@@ -726,8 +727,10 @@ export default function App() {
 
   const handleDeleteQuestion = (questionId: string) => {
     requestConfirm('Excluir Questão', 'Deseja realmente excluir esta questão de estudo?', async () => {
+      recordDeletion(questionId);
       setAllQuestions((prev) => prev.filter((q) => q.id !== questionId));
       await deleteQuestion(questionId);
+      showToast('Questão excluída com sucesso!');
     });
   };
 
@@ -1468,10 +1471,97 @@ export default function App() {
       'Excluir Item',
       'Tem certeza que deseja remover este item da linha do tempo?',
       async () => {
+        recordDeletion(itemId);
         setAllItems((prev) => prev.filter((i) => i.id !== itemId));
         await deleteTimelineItem(itemId);
+        showToast('Item removido com sucesso!');
       },
       'Excluir Item'
+    );
+  };
+
+  const handleDeleteTopic = (topicId: string, topicTitle: string) => {
+    requestConfirm(
+      'Excluir Aula',
+      `Excluir "${topicTitle}" e todos os itens salvos nesta aula?`,
+      async () => {
+        const itemIdsInTopic = allItems.filter((i) => i.topicId === topicId).map((i) => i.id);
+        const questionIdsInTopic = allQuestions.filter((q) => q.topicId === topicId).map((q) => q.id);
+        recordDeletion([topicId, ...itemIdsInTopic, ...questionIdsInTopic]);
+
+        setTopics((prev) => prev.filter((t) => t.id !== topicId));
+        setAllItems((prev) => prev.filter((i) => i.topicId !== topicId));
+        setAllQuestions((prev) => prev.filter((q) => q.topicId !== topicId));
+
+        if (selectedTopicId === topicId) {
+          const remaining = topics.filter((t) => t.id !== topicId && t.subjectId === selectedSubjectId);
+          setSelectedTopicId(remaining.length > 0 ? remaining[0].id : null);
+        }
+
+        await deleteTopicAndItems(topicId);
+        showToast('Aula excluída com sucesso!');
+      },
+      'Excluir Aula'
+    );
+  };
+
+  const handleDeleteSubject = (subjectId: string, subjectName: string) => {
+    requestConfirm(
+      'Excluir Matéria',
+      `Excluir a matéria "${subjectName}" e todas as suas aulas vinculadas?`,
+      async () => {
+        const topicIds = topics.filter((t) => t.subjectId === subjectId).map((t) => t.id);
+        const itemIds = allItems.filter((i) => i.subjectId === subjectId).map((i) => i.id);
+        const questionIds = allQuestions.filter((q) => q.subjectId === subjectId).map((q) => q.id);
+        recordDeletion([subjectId, ...topicIds, ...itemIds, ...questionIds]);
+
+        setSubjects((prev) => prev.filter((s) => s.id !== subjectId));
+        setTopics((prev) => prev.filter((t) => t.subjectId !== subjectId));
+        setAllItems((prev) => prev.filter((i) => i.subjectId !== subjectId));
+        setAllQuestions((prev) => prev.filter((q) => q.subjectId !== subjectId));
+
+        if (selectedSubjectId === subjectId) {
+          const remaining = subjects.filter((s) => s.id !== subjectId && s.courseId === selectedCourseId);
+          setSelectedSubjectId(remaining.length > 0 ? remaining[0].id : null);
+          setSelectedTopicId(null);
+        }
+
+        await deleteSubjectAndChildren(subjectId);
+        showToast('Matéria excluída com sucesso!');
+      },
+      'Excluir Matéria'
+    );
+  };
+
+  const handleDeleteCourse = (courseId: string, courseName: string) => {
+    setShowCourseDropdown(false);
+    requestConfirm(
+      'Excluir Curso',
+      `Excluir o curso "${courseName}" e todas as suas matérias e aulas vinculadas? Esta ação é irreversível.`,
+      async () => {
+        const subjectIds = subjects.filter((s) => s.courseId === courseId).map((s) => s.id);
+        const topicIds = topics.filter((t) => t.courseId === courseId || subjectIds.includes(t.subjectId)).map((t) => t.id);
+        const itemIds = allItems.filter((i) => i.courseId === courseId || topicIds.includes(i.topicId)).map((i) => i.id);
+        const questionIds = allQuestions.filter((q) => q.courseId === courseId || topicIds.includes(q.topicId)).map((q) => q.id);
+        recordDeletion([courseId, ...subjectIds, ...topicIds, ...itemIds, ...questionIds]);
+
+        setCourses((prev) => prev.filter((c) => c.id !== courseId));
+        setSubjects((prev) => prev.filter((s) => s.courseId !== courseId));
+        setTopics((prev) => prev.filter((t) => !topicIds.includes(t.id)));
+        setAllItems((prev) => prev.filter((i) => !itemIds.includes(i.id)));
+        setAllQuestions((prev) => prev.filter((q) => !questionIds.includes(q.id)));
+
+        if (selectedCourseId === courseId) {
+          const remaining = courses.filter((c) => c.id !== courseId);
+          setSelectedCourseId(remaining.length > 0 ? remaining[0].id : null);
+          setSelectedSubjectId(null);
+          setSelectedTopicId(null);
+        }
+
+        await deleteCourseAndChildren(courseId);
+        showToast('Curso excluído com sucesso!');
+      },
+      'Excluir Curso'
     );
   };
 
@@ -2108,13 +2198,7 @@ export default function App() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setShowCourseDropdown(false);
-                                requestConfirm(
-                                  'Excluir Curso',
-                                  `Excluir o curso "${crs.name}" e todas as suas matérias e aulas vinculadas? Esta ação é irreversível.`,
-                                  () => deleteCourseAndChildren(crs.id).then(reloadAllData),
-                                  'Excluir Curso'
-                                );
+                                handleDeleteCourse(crs.id, crs.name);
                               }}
                               className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
                               title="Excluir Curso"
@@ -2237,12 +2321,7 @@ export default function App() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            requestConfirm(
-                              'Excluir Matéria',
-                              `Excluir a matéria "${subj.name}" e todas as suas aulas vinculadas?`,
-                              () => deleteSubjectAndChildren(subj.id).then(reloadAllData),
-                              'Excluir Matéria'
-                            );
+                            handleDeleteSubject(subj.id, subj.name);
                           }}
                           className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
                           title="Excluir Matéria"
@@ -2315,12 +2394,7 @@ export default function App() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              requestConfirm(
-                                'Excluir Aula',
-                                `Excluir "${tp.title}" e todos os itens salvos nesta aula?`,
-                                () => deleteTopicAndItems(tp.id).then(reloadAllData),
-                                'Excluir Aula'
-                              );
+                              handleDeleteTopic(tp.id, tp.title);
                             }}
                             className="p-1 text-slate-400 hover:text-rose-400 shrink-0 cursor-pointer"
                             title="Excluir Aula"
@@ -3801,7 +3875,7 @@ export default function App() {
 
       {/* Custom In-App Confirmation Modal (Replaces browser confirm() dialog) */}
       {confirmDialog && confirmDialog.isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
           <div
             className={`border rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl flex flex-col ${
               lightMode
@@ -3841,7 +3915,11 @@ export default function App() {
                 onClick={async () => {
                   const action = confirmDialog.onConfirm;
                   setConfirmDialog(null);
-                  await action();
+                  try {
+                    await action();
+                  } catch (err) {
+                    console.error('Erro na ação de exclusão:', err);
+                  }
                 }}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-600/25 cursor-pointer transition flex items-center gap-1.5"
               >

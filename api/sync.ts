@@ -156,6 +156,17 @@ export default async function handler(req: any, res: any) {
       }
 
       const cloudData = await redisGet(userVaultKey);
+      if (cloudData) {
+        const deletedSet = new Set<string>(cloudData.deletedIds || []);
+        if (deletedSet.size > 0) {
+          cloudData.courses = (cloudData.courses || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.subjects = (cloudData.subjects || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.topics = (cloudData.topics || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.items = (cloudData.items || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.questions = (cloudData.questions || []).filter((i: any) => !deletedSet.has(i.id));
+        }
+      }
+
       return res.status(200).json({
         success: true,
         data: cloudData || {
@@ -164,6 +175,7 @@ export default async function handler(req: any, res: any) {
           topics: [],
           items: [],
           questions: [],
+          deletedIds: [],
           lastSyncedAt: Date.now(),
         },
       });
@@ -178,13 +190,22 @@ export default async function handler(req: any, res: any) {
         topics: [],
         items: [],
         questions: [],
+        deletedIds: [],
       };
 
-      const mergedCourses = mergeEntityLists(cloudData.courses, clientData.courses);
-      const mergedSubjects = mergeEntityLists(cloudData.subjects, clientData.subjects);
-      const mergedTopics = mergeEntityLists(cloudData.topics, clientData.topics);
-      const mergedItems = mergeEntityLists(cloudData.items, clientData.items);
-      const mergedQuestions = mergeEntityLists(cloudData.questions, clientData.questions);
+      const allDeletedIds = new Set<string>([
+        ...(cloudData.deletedIds || []),
+        ...(clientData.deletedIds || []),
+      ]);
+
+      const filterNotDeleted = <T extends { id: string }>(list: T[] = []) =>
+        list.filter((item) => item && item.id && !allDeletedIds.has(item.id));
+
+      const mergedCourses = filterNotDeleted(mergeEntityLists(cloudData.courses, clientData.courses));
+      const mergedSubjects = filterNotDeleted(mergeEntityLists(cloudData.subjects, clientData.subjects));
+      const mergedTopics = filterNotDeleted(mergeEntityLists(cloudData.topics, clientData.topics));
+      const mergedItems = filterNotDeleted(mergeEntityLists(cloudData.items, clientData.items));
+      const mergedQuestions = filterNotDeleted(mergeEntityLists(cloudData.questions, clientData.questions));
 
       const now = Date.now();
       const mergedPayload = {
@@ -193,6 +214,7 @@ export default async function handler(req: any, res: any) {
         topics: mergedTopics,
         items: mergedItems,
         questions: mergedQuestions,
+        deletedIds: Array.from(allDeletedIds).slice(-3000),
         lastSyncedAt: now,
       };
 

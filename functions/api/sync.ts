@@ -180,6 +180,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       const cloudData = await storeGet(env, userVaultKey);
+      if (cloudData) {
+        const deletedSet = new Set<string>(cloudData.deletedIds || []);
+        if (deletedSet.size > 0) {
+          cloudData.courses = (cloudData.courses || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.subjects = (cloudData.subjects || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.topics = (cloudData.topics || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.items = (cloudData.items || []).filter((i: any) => !deletedSet.has(i.id));
+          cloudData.questions = (cloudData.questions || []).filter((i: any) => !deletedSet.has(i.id));
+        }
+      }
+
       return jsonResponse({
         success: true,
         data: cloudData || {
@@ -188,6 +199,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
           topics: [],
           items: [],
           questions: [],
+          deletedIds: [],
           lastSyncedAt: Date.now(),
         },
       });
@@ -208,13 +220,24 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         topics: [],
         items: [],
         questions: [],
+        deletedIds: [],
       };
 
-      const mergedCourses = mergeEntityLists(cloudData.courses, clientData.courses);
-      const mergedSubjects = mergeEntityLists(cloudData.subjects, clientData.subjects);
-      const mergedTopics = mergeEntityLists(cloudData.topics, clientData.topics);
-      const mergedItems = mergeEntityLists(cloudData.items, clientData.items);
-      const mergedQuestions = mergeEntityLists(cloudData.questions, clientData.questions);
+      // 1. Unir tombstones de exclusão
+      const allDeletedIds = new Set<string>([
+        ...(cloudData.deletedIds || []),
+        ...(clientData.deletedIds || []),
+      ]);
+
+      // 2. Mesclar entidades descartando qualquer item que foi excluído
+      const filterNotDeleted = <T extends { id: string }>(list: T[] = []) =>
+        list.filter((item) => item && item.id && !allDeletedIds.has(item.id));
+
+      const mergedCourses = filterNotDeleted(mergeEntityLists(cloudData.courses, clientData.courses));
+      const mergedSubjects = filterNotDeleted(mergeEntityLists(cloudData.subjects, clientData.subjects));
+      const mergedTopics = filterNotDeleted(mergeEntityLists(cloudData.topics, clientData.topics));
+      const mergedItems = filterNotDeleted(mergeEntityLists(cloudData.items, clientData.items));
+      const mergedQuestions = filterNotDeleted(mergeEntityLists(cloudData.questions, clientData.questions));
 
       const now = Date.now();
       const mergedPayload = {
@@ -223,6 +246,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         topics: mergedTopics,
         items: mergedItems,
         questions: mergedQuestions,
+        deletedIds: Array.from(allDeletedIds).slice(-3000),
         lastSyncedAt: now,
       };
 

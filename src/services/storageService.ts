@@ -132,6 +132,7 @@ function createDemoBoardPhotoDataUrl(): string {
 
 // Seed initial demo data with 3-Level hierarchy: Course -> Subject -> Topic -> Items
 export async function ensureInitialSeedData(): Promise<void> {
+  const hasSeeded = localStorage.getItem('noteon_has_seeded_v1');
   const db = await getLocalDB();
   const existingCourses = await db.getAll('courses');
   const now = Date.now();
@@ -139,6 +140,9 @@ export async function ensureInitialSeedData(): Promise<void> {
   let defaultCourseId = 'course-medicina';
 
   if (existingCourses.length === 0) {
+    // Se o usuário já usou e apagou conscientemente, não recria os exemplos
+    if (hasSeeded) return;
+
     const course1: Course = {
       id: 'course-medicina',
       name: 'Medicina & Saúde',
@@ -157,8 +161,10 @@ export async function ensureInitialSeedData(): Promise<void> {
     };
     await db.put('courses', course1);
     await db.put('courses', course2);
+    localStorage.setItem('noteon_has_seeded_v1', 'true');
   } else {
     defaultCourseId = existingCourses[0].id;
+    localStorage.setItem('noteon_has_seeded_v1', 'true');
   }
 
   // Check if existing subjects need courseId migration
@@ -170,7 +176,7 @@ export async function ensureInitialSeedData(): Promise<void> {
     }
   }
 
-  if (existingSubjects.length > 0) return;
+  if (existingSubjects.length > 0 || hasSeeded) return;
 
   const subj1: Subject = {
     id: 'subj-fisiologia',
@@ -485,21 +491,38 @@ export async function saveMergedCloudData(data: {
   topics?: StudyTopic[];
   items?: TimelineItem[];
   questions?: StudyQuestion[];
+  deletedIds?: string[];
 }): Promise<void> {
   const db = await getLocalDB();
+  const deletedSet = new Set<string>(data.deletedIds || []);
+
+  // 1. Remover do banco local qualquer item excluído
+  for (const id of deletedSet) {
+    try {
+      await Promise.all([
+        db.delete('courses', id),
+        db.delete('subjects', id),
+        db.delete('topics', id),
+        db.delete('items', id),
+        db.delete('questions', id),
+      ]);
+    } catch (_) {}
+  }
+
+  // 2. Salvar apenas os itens válidos que não foram marcados como excluídos
   for (const c of data.courses || []) {
-    await db.put('courses', c);
+    if (!deletedSet.has(c.id)) await db.put('courses', c);
   }
   for (const s of data.subjects || []) {
-    await db.put('subjects', s);
+    if (!deletedSet.has(s.id)) await db.put('subjects', s);
   }
   for (const t of data.topics || []) {
-    await db.put('topics', t);
+    if (!deletedSet.has(t.id)) await db.put('topics', t);
   }
   for (const i of data.items || []) {
-    await db.put('items', i);
+    if (!deletedSet.has(i.id)) await db.put('items', i);
   }
   for (const q of data.questions || []) {
-    await db.put('questions', q);
+    if (!deletedSet.has(q.id)) await db.put('questions', q);
   }
 }
