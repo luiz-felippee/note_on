@@ -4,8 +4,9 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
-[vars]
-KV_REST_API_URL = "https://precise-sheep-187228.upstash.io"
-KV_REST_API_TOKEN = "gQAAAAAAAttcAQIgcDFlMzdmODMzM2ZiY2U0ODU5OGMwODU4ZTQ4YmI3ODY1Yg"
-NOTEON_AUTH_SECRET = "noteon_super_secret_salt_2026"
+[[kv_namespaces]]
+binding = "NOTEON_KV"
+id = "7706a57d96a24408a7c37658ca4cf341"
 
+[vars]
+NOTEON_AUTH_SECRET = "noteon_super_secret_salt_2026"

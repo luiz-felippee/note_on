@@ -1,60 +1,53 @@
 import crypto from 'node:crypto';
 
-// Upstash Redis REST Config & Runner for Cloudflare Pages Functions
-const DEFAULT_REDIS_URL = 'https://precise-sheep-187228.upstash.io';
-const DEFAULT_REDIS_TOKEN = 'gQAAAAAAAttcAQIgcDFlMzdmODMzM2ZiY2U0ODU5OGMwODU4ZTQ4YmI3ODY1Yg';
 const DEFAULT_AUTH_SECRET = 'noteon_super_secret_salt_2026';
 
+interface KVNamespace {
+  get(key: string, type?: 'text' | 'json' | 'arrayBuffer' | 'stream'): Promise<any>;
+  put(key: string, value: string | ArrayBuffer | ReadableStream, options?: any): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
 interface Env {
-  KV_REST_API_URL?: string;
-  UPSTASH_REDIS_REST_URL?: string;
-  KV_REST_API_TOKEN?: string;
-  UPSTASH_REDIS_REST_TOKEN?: string;
+  NOTEON_KV?: KVNamespace;
   NOTEON_AUTH_SECRET?: string;
+  [key: string]: any;
 }
 
-function getRedisConfig(env: Env) {
-  const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL || DEFAULT_REDIS_URL;
-  const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN || DEFAULT_REDIS_TOKEN;
-  return { url: url.replace(/\/$/, ''), token };
-}
+// In-memory fallback
+const inMemoryStore = new Map<string, any>();
 
-async function redisCommand(env: Env, command: string[]): Promise<any> {
-  const { url, token } = getRedisConfig(env);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(command),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Upstash Redis Error (${response.status}): ${errorText}`);
-  }
-
-  const data = (await response.json()) as any;
-  return data.result;
-}
-
-async function redisGet<T = any>(env: Env, key: string): Promise<T | null> {
-  const result = await redisCommand(env, ['GET', key]);
-  if (!result) return null;
-  if (typeof result === 'string') {
+async function storeGet<T = any>(env: Env, key: string): Promise<T | null> {
+  if (env?.NOTEON_KV) {
     try {
-      return JSON.parse(result);
-    } catch {
-      return result as unknown as T;
+      const val = await env.NOTEON_KV.get(key, 'text');
+      if (!val) return null;
+      try {
+        return JSON.parse(val);
+      } catch {
+        return val as unknown as T;
+      }
+    } catch (e) {
+      console.warn('Erro ao ler NOTEON_KV:', e);
     }
   }
-  return result;
+
+  const memoryVal = inMemoryStore.get(key);
+  return memoryVal ? (memoryVal as T) : null;
 }
 
-async function redisSet(env: Env, key: string, value: any): Promise<string> {
+async function storeSet(env: Env, key: string, value: any): Promise<void> {
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  return await redisCommand(env, ['SET', key, serialized]);
+  if (env?.NOTEON_KV) {
+    try {
+      await env.NOTEON_KV.put(key, serialized);
+      return;
+    } catch (e) {
+      console.warn('Erro ao salvar em NOTEON_KV:', e);
+    }
+  }
+
+  inMemoryStore.set(key, typeof value === 'string' ? JSON.parse(value) : value);
 }
 
 // Crypto & Session Token Helpers
@@ -176,7 +169,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       const userKey = `noteon:user:${cleanEmail}`;
-      const existingUser = await redisGet(env, userKey);
+      const existingUser = await storeGet(env, userKey);
 
       if (existingUser) {
         return jsonResponse(
@@ -197,7 +190,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         createdAt: Date.now(),
       };
 
-      await redisSet(env, userKey, userData);
+      await storeSet(env, userKey, userData);
       const token = createSessionToken(userId, cleanEmail, secret);
 
       return jsonResponse(
@@ -220,7 +213,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       const userKey = `noteon:user:${cleanEmail}`;
-      const user = await redisGet(env, userKey);
+      const user = await storeGet(env, userKey);
 
       if (!user || !user.passwordHash || !user.salt) {
         return jsonResponse(
@@ -276,4 +269,3 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     );
   }
 }
-
