@@ -137,10 +137,24 @@ export default async function handler(req: any, res: any) {
   }
 
   const userVaultKey = `noteon:userdata:${session.userId}`;
+  const userVersionKey = `noteon:userver:${session.userId}`;
 
   try {
-    // GET: Pull cloud data
+    // GET: Pull cloud data or check version
     if (req.method === 'GET') {
+      const isCheckOnly = req.query?.check === 'true' || req.query?.check === '1';
+      if (isCheckOnly) {
+        let version = await redisGet(userVersionKey);
+        if (!version) {
+          const fullData = await redisGet(userVaultKey);
+          version = fullData?.lastSyncedAt || 0;
+        }
+        return res.status(200).json({
+          success: true,
+          lastSyncedAt: Number(version) || 0,
+        });
+      }
+
       const cloudData = await redisGet(userVaultKey);
       return res.status(200).json({
         success: true,
@@ -172,16 +186,20 @@ export default async function handler(req: any, res: any) {
       const mergedItems = mergeEntityLists(cloudData.items, clientData.items);
       const mergedQuestions = mergeEntityLists(cloudData.questions, clientData.questions);
 
+      const now = Date.now();
       const mergedPayload = {
         courses: mergedCourses,
         subjects: mergedSubjects,
         topics: mergedTopics,
         items: mergedItems,
         questions: mergedQuestions,
-        lastSyncedAt: Date.now(),
+        lastSyncedAt: now,
       };
 
-      await redisSet(userVaultKey, mergedPayload);
+      await Promise.all([
+        redisSet(userVaultKey, mergedPayload),
+        redisSet(userVersionKey, now),
+      ]);
 
       return res.status(200).json({
         success: true,

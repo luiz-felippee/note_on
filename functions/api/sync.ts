@@ -166,10 +166,26 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   }
 
   const userVaultKey = `noteon:userdata:${session.userId}`;
+  const userVersionKey = `noteon:userver:${session.userId}`;
 
   try {
-    // GET: Pull cloud data
+    // GET: Pull cloud data or lightweight version check
     if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const isCheckOnly = url.searchParams.get('check') === 'true' || url.searchParams.get('check') === '1';
+
+      if (isCheckOnly) {
+        let version = await redisGet<number>(env, userVersionKey);
+        if (!version) {
+          const fullData = await redisGet(env, userVaultKey);
+          version = fullData?.lastSyncedAt || 0;
+        }
+        return jsonResponse({
+          success: true,
+          lastSyncedAt: Number(version) || 0,
+        });
+      }
+
       const cloudData = await redisGet(env, userVaultKey);
       return jsonResponse({
         success: true,
@@ -207,16 +223,20 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       const mergedItems = mergeEntityLists(cloudData.items, clientData.items);
       const mergedQuestions = mergeEntityLists(cloudData.questions, clientData.questions);
 
+      const now = Date.now();
       const mergedPayload = {
         courses: mergedCourses,
         subjects: mergedSubjects,
         topics: mergedTopics,
         items: mergedItems,
         questions: mergedQuestions,
-        lastSyncedAt: Date.now(),
+        lastSyncedAt: now,
       };
 
-      await redisSet(env, userVaultKey, mergedPayload);
+      await Promise.all([
+        redisSet(env, userVaultKey, mergedPayload),
+        redisSet(env, userVersionKey, now),
+      ]);
 
       return jsonResponse({
         success: true,

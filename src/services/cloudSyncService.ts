@@ -122,3 +122,61 @@ export async function syncWithCloud(localData: SyncPayload): Promise<{
   return await parseResponseJson(res, 'Falha na sincronização.');
 }
 
+/**
+ * Lightweight check to see if another device pushed changes to the cloud
+ */
+export async function checkCloudVersion(): Promise<{ hasServerChanges: boolean; serverLastSyncedAt: number }> {
+  const token = getCloudToken();
+  if (!token) return { hasServerChanges: false, serverLastSyncedAt: 0 };
+
+  try {
+    const res = await fetch('/api/sync?check=true', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) return { hasServerChanges: false, serverLastSyncedAt: 0 };
+    const data = await res.json();
+    return {
+      hasServerChanges: true,
+      serverLastSyncedAt: Number(data.lastSyncedAt) || 0,
+    };
+  } catch {
+    return { hasServerChanges: false, serverLastSyncedAt: 0 };
+  }
+}
+
+/**
+ * Pull full updated cloud dataset when server has newer changes
+ */
+export async function pullFromCloud(): Promise<SyncPayload & { lastSyncedAt?: number }> {
+  const token = getCloudToken();
+  if (!token) throw new Error('Não autenticado na nuvem.');
+
+  const res = await fetch('/api/sync', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const json = await parseResponseJson(res, 'Falha ao buscar dados na nuvem.');
+  return json.data;
+}
+
+/**
+ * Generates a 1-click device pairing link for phone
+ */
+export function getQuickPairingUrl(): string | null {
+  const user = getCloudUser();
+  const token = getCloudToken();
+  if (!user || !token) return null;
+
+  const baseOrigin = window.location.origin;
+  return `${baseOrigin}/?sync_token=${encodeURIComponent(token)}&sync_email=${encodeURIComponent(
+    user.email
+  )}&sync_userid=${encodeURIComponent(user.userId)}`;
+}
+

@@ -97,6 +97,9 @@ import {
   getCloudUser,
   syncWithCloud,
   CloudUser,
+  checkCloudVersion,
+  pullFromCloud,
+  saveCloudSession,
 } from './services/cloudSyncService';
 
 const SUBJECT_COLORS = [
@@ -198,12 +201,31 @@ export default function App() {
     }
   }, [toastInfo]);
 
-  // NoteOn Cloud Sync States (Vercel Serverless + Upstash Redis)
+  // NoteOn Cloud Sync States (Cloudflare Pages Functions + Upstash Redis)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(getCloudUser());
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
+  const lastSyncedTimeRef = useRef<number | null>(null);
   const isInitialLoadedRef = useRef(false);
   const autoSyncTimeoutRef = useRef<any>(null);
+
+  // 1-Click Device Pairing from URL (ex: abrindo pelo link gerado no PC para o celular)
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const syncToken = urlParams.get('sync_token');
+      const syncEmail = urlParams.get('sync_email');
+      const syncUserId = urlParams.get('sync_userid');
+
+      if (syncToken && syncEmail && syncUserId) {
+        const pairedUser: CloudUser = { userId: syncUserId, email: syncEmail };
+        saveCloudSession(pairedUser, syncToken);
+        setCloudUser(pairedUser);
+        showToast(`📱 Aparelho sincronizado com ${syncEmail}!`, 'success');
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (_) {}
+  }, []);
 
   const handlePerformCloudSync = async (silent = false) => {
     if (!cloudUser || !isInitialLoadedRef.current) return;
@@ -224,7 +246,11 @@ export default function App() {
         setTopics(res.data.topics || []);
         setAllItems(res.data.items || []);
         setAllQuestions(res.data.questions || []);
-        setLastSyncedTime(Date.now());
+
+        const syncedAt = res.data.lastSyncedAt || Date.now();
+        lastSyncedTimeRef.current = syncedAt;
+        setLastSyncedTime(syncedAt);
+
         if (!silent) {
           showToast('☁️ NoteOn sincronizado com a nuvem!');
         }
@@ -236,7 +262,7 @@ export default function App() {
     }
   };
 
-  // Automatic Background Sync (Debounce de 1.8s a cada alteração feita no PC ou celular)
+  // Push Automático de Alta Velocidade (Debounce de 700ms após qualquer alteração no PC ou celular)
   useEffect(() => {
     if (!cloudUser || !isInitialLoadedRef.current) return;
 
@@ -246,7 +272,7 @@ export default function App() {
 
     autoSyncTimeoutRef.current = setTimeout(() => {
       handlePerformCloudSync(true);
-    }, 1800);
+    }, 700);
 
     return () => {
       if (autoSyncTimeoutRef.current) {
@@ -255,7 +281,45 @@ export default function App() {
     };
   }, [courses, subjects, topics, allItems, allQuestions, cloudUser]);
 
-  // Sincroniza ao abrir/focar a janela ou desbloquear o celular
+  // Polling em Background Assíncrono Contínuo (Realtime Sync PC ↔ Celular a cada 3.5 segundos)
+  useEffect(() => {
+    if (!cloudUser) return;
+
+    let isPolling = false;
+    const interval = setInterval(async () => {
+      if (isPolling || isSyncingCloud || !isInitialLoadedRef.current) return;
+      isPolling = true;
+      try {
+        const { serverLastSyncedAt } = await checkCloudVersion();
+        const localLast = lastSyncedTimeRef.current || 0;
+
+        // Se o servidor tiver versão mais recente que o último sync local
+        if (serverLastSyncedAt && serverLastSyncedAt > localLast + 500) {
+          const freshData = await pullFromCloud();
+          if (freshData) {
+            await saveMergedCloudData(freshData);
+            setCourses(freshData.courses || []);
+            setSubjects(freshData.subjects || []);
+            setTopics(freshData.topics || []);
+            setAllItems(freshData.items || []);
+            setAllQuestions(freshData.questions || []);
+
+            const newTime = freshData.lastSyncedAt || serverLastSyncedAt;
+            lastSyncedTimeRef.current = newTime;
+            setLastSyncedTime(newTime);
+          }
+        }
+      } catch (_) {
+        // Silencioso em caso de oscilação momentânea
+      } finally {
+        isPolling = false;
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [cloudUser, isSyncingCloud]);
+
+  // Sincroniza imediatamente ao abrir/focar a janela ou desbloquear a tela do celular
   useEffect(() => {
     const onFocus = () => {
       if (cloudUser && isInitialLoadedRef.current) {

@@ -10,6 +10,9 @@ import {
   AlertCircle,
   Smartphone,
   Laptop,
+  Copy,
+  Check,
+  Zap,
 } from 'lucide-react';
 import {
   CloudUser,
@@ -17,6 +20,7 @@ import {
   cloudLogin,
   cloudRegister,
   cloudLogout,
+  getQuickPairingUrl,
 } from '../services/cloudSyncService';
 
 interface CloudSyncModalProps {
@@ -46,6 +50,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   if (!isOpen) return null;
 
@@ -182,6 +187,69 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </div>
               </div>
 
+              {/* Status de Sincronização Assíncrona */}
+              <div
+                className={`p-2.5 rounded-xl border flex items-center gap-2 text-[11px] ${
+                  lightMode
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
+                    : 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                <span className="font-semibold">
+                  Sincronização em tempo real ativa:
+                </span>
+                <span className="opacity-90">
+                  qualquer mudança feita aqui ou no celular reflete automaticamente em segundos.
+                </span>
+              </div>
+
+              {/* Botão de Pareamento Instantâneo para Celular */}
+              <div
+                className={`p-3 rounded-xl border space-y-2 ${
+                  lightMode
+                    ? 'bg-indigo-50/60 border-indigo-200 text-indigo-950'
+                    : 'bg-indigo-950/20 border-indigo-800/40 text-indigo-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5 text-xs text-indigo-400">
+                    <Smartphone className="w-4 h-4 text-cyan-400" />
+                    <span>Conectar no Celular sem digitar senha</span>
+                  </span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">
+                    1 Clique
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Copie o link abaixo e abra no navegador do celular (ou envie para o seu WhatsApp). O celular entrará conectado nesta mesma conta na hora:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pairUrl = getQuickPairingUrl();
+                    if (pairUrl) {
+                      navigator.clipboard.writeText(pairUrl);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2500);
+                    }
+                  }}
+                  className="w-full py-2 px-3 rounded-lg bg-indigo-600/80 hover:bg-indigo-600 text-white font-semibold flex items-center justify-center gap-2 transition cursor-pointer text-xs shadow"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Link Copiado! Abra no navegador do Celular</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar Link de Pareamento Instantâneo</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={onPerformSync}
@@ -189,7 +257,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer transition disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Sincronizando agora...' : 'Sincronizar Agora (PC ↔ Celular)'}</span>
+                <span>{isSyncing ? 'Sincronizando agora...' : 'Forçar Sincronização Agora'}</span>
               </button>
 
               <div className="pt-2 border-t border-slate-800/50 flex justify-between items-center">
