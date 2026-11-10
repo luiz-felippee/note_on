@@ -160,14 +160,23 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
               {' '}(ou print com Alt + Shift + S). Tudo sincronizado automaticamente com o NoteOn!
             </p>
 
+            {/* Direct Download Button for other computers */}
+            <a
+              href="/noteon-extension.zip"
+              download="noteon-extension.zip"
+              className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:opacity-95 text-white font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/25 transition text-xs no-underline my-3"
+            >
+              <Download className="w-4 h-4" />
+              <span>Baixar Extensão (.zip) para este ou outro Notebook</span>
+            </a>
+
             <div className="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
               <div className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-400 flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
                   1
                 </span>
                 <p className="text-slate-300">
-                  No Google Chrome, Edge ou Brave, abra{' '}
-                  <span className="font-mono text-indigo-300 select-all">chrome://extensions</span>
+                  Clique no botão verde acima para baixar o arquivo <strong>noteon-extension.zip</strong> e extraia o arquivo (.zip) no seu computador.
                 </p>
               </div>
 
@@ -176,7 +185,7 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
                   2
                 </span>
                 <p className="text-slate-300">
-                  Ative o <strong>Modo do desenvolvedor</strong> no canto superior direito.
+                  No Chrome, Edge ou Brave, acesse <span className="font-mono text-indigo-300 select-all">chrome://extensions</span> e ative o <strong>Modo do desenvolvedor</strong> (canto superior direito).
                 </p>
               </div>
 
@@ -185,11 +194,7 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
                   3
                 </span>
                 <p className="text-slate-300">
-                  Clique em <strong>Carregar sem compactação</strong> (Load Unpacked) e escolha a pasta:
-                  <br />
-                  <span className="font-mono text-[11px] text-cyan-300 break-all select-all block mt-1 bg-slate-950 p-1.5 rounded-lg border border-slate-800">
-                    note_on\extension
-                  </span>
+                  Clique em <strong>Carregar sem compactação</strong> (Load Unpacked) e selecione a pasta da extensão descompactada.
                 </p>
               </div>
             </div>
