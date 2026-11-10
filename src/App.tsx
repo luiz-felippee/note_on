@@ -84,6 +84,7 @@ import { TopicQuestionsView } from './components/TopicQuestionsView';
 import { ExtensionPluginModal } from './components/ExtensionPluginModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { GlobalSearchView } from './components/GlobalSearchView';
+import { StudyAiChatModal } from './components/StudyAiChatModal';
 import { generateQuestionsFromTranscript } from './services/questionGeneratorService';
 import {
   getCloudUser,
@@ -161,6 +162,7 @@ export default function App() {
   const [activePhotoItem, setActivePhotoItem] = useState<TimelineItem | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
+  const [showAiChatModal, setShowAiChatModal] = useState(false);
   const [showFlashcardsModal, setShowFlashcardsModal] = useState(false);
   const [showCarouselModal, setShowCarouselModal] = useState(false);
   const [showExtensionModal, setShowExtensionModal] = useState(false);
@@ -1721,6 +1723,26 @@ export default function App() {
           </button>
         </div>
 
+        {/* Tutor IA Fast Access Button */}
+        <div className="px-2.5 pb-2 border-b border-slate-800/60 bg-slate-950/20">
+          <button
+            type="button"
+            onClick={() => {
+              setShowAiChatModal(true);
+              setMobileSidebarOpen(false);
+            }}
+            className="w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600/20 via-purple-600/25 to-indigo-600/20 hover:from-indigo-600/35 hover:to-purple-600/35 border border-indigo-500/30 text-indigo-200 text-xs font-semibold flex items-center justify-between transition cursor-pointer shadow-xs"
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+              <span>Tutor IA da Aula</span>
+            </span>
+            <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.5 rounded-md font-bold">
+              Multi-API
+            </span>
+          </button>
+        </div>
+
         {/* Level 1: Course Selector Tab / Dropdown */}
         <div className="p-3 border-b border-slate-800/60 bg-slate-950/40">
           <div className="flex items-center justify-between mb-1.5">
@@ -2265,6 +2287,17 @@ export default function App() {
                     ? 'Sincronizando...'
                     : 'Salvo na Nuvem'}
                 </span>
+              </button>
+
+              {/* Tutor IA Button in Header */}
+              <button
+                type="button"
+                onClick={() => setShowAiChatModal(true)}
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer transition shrink-0"
+                title="Abrir Tutor IA de Estudos (Multi-Modelos: Gemini, Groq, DeepSeek, OpenAI)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                <span className="hidden sm:inline">Tutor IA</span>
               </button>
 
               {/* Options Menu */}
@@ -3446,6 +3479,28 @@ export default function App() {
           subjectName={currentSubject.name}
           accentColor={currentSubject.color}
           onClose={() => setShowCarouselModal(false)}
+        />
+      )}
+
+      {/* Tutor IA de Estudos (Multi-Modelos com Failover) */}
+      {showAiChatModal && currentTopic && (
+        <StudyAiChatModal
+          isOpen={showAiChatModal}
+          onClose={() => setShowAiChatModal(false)}
+          lightMode={lightMode}
+          course={currentCourse}
+          subject={currentSubject}
+          topic={currentTopic}
+          items={currentTopicItems}
+          questions={currentTopicQuestions}
+          onSaveToTimeline={(text, title) => {
+            addTimelineEntry({
+              type: 'text',
+              title: title || 'Síntese do Tutor IA',
+              content: text,
+            });
+          }}
+          showToast={showToast}
         />
       )}
 

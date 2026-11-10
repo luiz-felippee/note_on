@@ -111,3 +111,22 @@ export interface StudyQuestion {
   createdAt: number;
   importantForExam?: boolean;
 }
+
+export type AiProviderName = 'gemini' | 'groq' | 'openrouter' | 'openai' | 'local';
+
+export interface AiProviderConfig {
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openRouterApiKey?: string;
+  openAiApiKey?: string;
+  preferredOrder?: AiProviderName[];
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+  providerUsed?: string;
+  isStudyPlan?: boolean;
+}
