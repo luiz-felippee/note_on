@@ -37,6 +37,7 @@ import {
   Monitor,
   Puzzle,
   CheckCircle2,
+  BookOpen,
 } from 'lucide-react';
 import {
   Course,
@@ -82,6 +83,7 @@ import { BoardCarouselModal } from './components/BoardCarouselModal';
 import { TopicQuestionsView } from './components/TopicQuestionsView';
 import { ExtensionPluginModal } from './components/ExtensionPluginModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
+import { GlobalSearchView } from './components/GlobalSearchView';
 import { generateQuestionsFromTranscript } from './services/questionGeneratorService';
 import {
   getCloudUser,
@@ -114,6 +116,8 @@ export default function App() {
   // UI State
   const [lightMode, setLightMode] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [activeMainView, setActiveMainView] = useState<'timeline' | 'global_search'>('timeline');
+  const [highlightItemId, setHighlightItemId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<
     'all' | TimelineItemType | 'exam' | 'questions'
   >('all');
@@ -264,6 +268,31 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [cloudUser]);
+
+  // Navegar a partir da Pesquisa Global diretamente para a aula e focar no item
+  const handleNavigateFromGlobalSearch = (
+    courseId: string | undefined,
+    subjectId: string,
+    topicId: string,
+    itemId?: string
+  ) => {
+    if (courseId) {
+      setSelectedCourseId(courseId);
+    }
+    setSelectedSubjectId(subjectId);
+    setSelectedTopicId(topicId);
+    setActiveMainView('timeline');
+    if (itemId) {
+      setHighlightItemId(itemId);
+      setTimeout(() => {
+        const el = document.getElementById(`timeline-card-${itemId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 250);
+      setTimeout(() => setHighlightItemId(null), 3500);
+    }
+  };
 
   // Custom In-App Confirmation Modal (Replaces browser confirm() dialog)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -1653,6 +1682,45 @@ export default function App() {
           </button>
         </div>
 
+        {/* Primary View Switcher: Minhas Aulas vs Pesquisa Global */}
+        <div className="p-2.5 border-b border-slate-800/60 bg-slate-950/20 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMainView('timeline');
+              setMobileSidebarOpen(false);
+            }}
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              activeMainView === 'timeline'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : lightMode
+                ? 'text-slate-600 hover:bg-slate-100'
+                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Aulas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMainView('global_search');
+              setMobileSidebarOpen(false);
+            }}
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              activeMainView === 'global_search'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : lightMode
+                ? 'text-slate-600 hover:bg-slate-100'
+                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+            }`}
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Pesquisa Global</span>
+          </button>
+        </div>
+
         {/* Level 1: Course Selector Tab / Dropdown */}
         <div className="p-3 border-b border-slate-800/60 bg-slate-950/40">
           <div className="flex items-center justify-between mb-1.5">
@@ -2007,7 +2075,22 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Clean Header: Course › Subject › Lesson */}
+        {activeMainView === 'global_search' ? (
+          <GlobalSearchView
+            lightMode={lightMode}
+            courses={courses}
+            subjects={subjects}
+            topics={topics}
+            items={allItems}
+            questions={allQuestions}
+            onNavigateToItem={handleNavigateFromGlobalSearch}
+            onNavigateToTopic={(cId, sId, tId) => handleNavigateFromGlobalSearch(cId, sId, tId)}
+            onOpenPhotoViewer={(item) => setActivePhotoItem(item)}
+            onCloseSearch={() => setActiveMainView('timeline')}
+          />
+        ) : (
+          <>
+            {/* Clean Header: Course › Subject › Lesson */}
         {currentTopic && currentSubject && (
           <div
             className={`px-3.5 sm:px-6 md:px-8 py-2.5 sm:py-3.5 border-b shrink-0 flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-4 ${
@@ -2148,6 +2231,41 @@ export default function App() {
                   <span>Revisões Hoje ({subjectDueCards.length})</span>
                 </button>
               )}
+
+              {/* Cloud Sync Status Indicator Pill */}
+              <button
+                type="button"
+                onClick={() => setShowCloudModal(true)}
+                title={
+                  cloudUser
+                    ? `Sincronização ativa: ${cloudUser.email}`
+                    : 'Nuvem desconectada. Clique para sincronizar celular e PC.'
+                }
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer shrink-0 ${
+                  !cloudUser
+                    ? 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:text-slate-200'
+                    : isSyncingCloud
+                    ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                }`}
+              >
+                <Cloud
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    isSyncingCloud
+                      ? 'animate-spin text-amber-400'
+                      : cloudUser
+                      ? 'text-emerald-400'
+                      : 'text-slate-500'
+                  }`}
+                />
+                <span className="hidden lg:inline">
+                  {!cloudUser
+                    ? 'Nuvem'
+                    : isSyncingCloud
+                    ? 'Sincronizando...'
+                    : 'Salvo na Nuvem'}
+                </span>
+              </button>
 
               {/* Options Menu */}
               <div className="relative shrink-0">
@@ -2419,6 +2537,10 @@ export default function App() {
                       {/* Right Column / Full Mobile Card */}
                       <div
                         className={`w-full flex-1 min-w-0 rounded-xl sm:rounded-2xl border p-3.5 sm:p-4 transition ${
+                          highlightItemId === item.id
+                            ? 'ring-2 ring-indigo-500 shadow-xl shadow-indigo-500/30 animate-pulse'
+                            : ''
+                        } ${
                           item.importantForExam
                             ? lightMode
                               ? 'bg-amber-50/60 border-amber-300'
@@ -2862,6 +2984,8 @@ export default function App() {
               </form>
             </div>
           </div>
+        )}
+          </>
         )}
       </main>
 
