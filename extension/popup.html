@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>NoteOn - Captura de Slides</title>
+  <title>NoteOn - Gravação e Captura</title>
   <style>
     * {
       box-sizing: border-box;
@@ -11,7 +11,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     body {
-      width: 290px;
+      width: 300px;
       padding: 16px;
       background: #090d16;
       color: #f1f5f9;
@@ -60,9 +60,33 @@
       flex-direction: column;
       gap: 8px;
     }
+    .btn-audio {
+      width: 100%;
+      padding: 11px 12px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+      transition: all 0.15s ease;
+    }
+    .btn-audio:hover {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      transform: translateY(-1px);
+    }
+    .btn-audio-active {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4) !important;
+    }
     .btn-primary {
       width: 100%;
-      padding: 11px;
+      padding: 10px 12px;
       background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
       color: #ffffff;
       border: none;
@@ -109,6 +133,11 @@
       font-weight: 700;
       color: #a5b4fc;
     }
+    .divider {
+      height: 1px;
+      background: #1e293b;
+      margin: 4px 0;
+    }
     .toast-msg {
       margin-top: 10px;
       padding: 8px;
@@ -127,7 +156,7 @@
 <body>
   <div class="header">
     <div class="logo">
-      <span>🎓 NoteOn Print</span>
+      <span>🎓 NoteOn Extensão</span>
     </div>
     <div id="statusBadge" class="status-badge status-disconnected">
       ● Verificando...
@@ -135,17 +164,34 @@
   </div>
 
   <p class="desc">
-    Selecione a área exata do slide ou capture a tela inteira direto para o áudio em gravação.
+    Grave o áudio da aula com botão flutuante e recorte slides da tela diretamente para o seu caderno.
   </p>
 
   <div class="btn-group">
+    <!-- NOVO: Gravar Áudio da Aula com botão flutuante -->
+    <button id="btnRecordAudio" class="btn-audio">
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <span style="font-size: 14px;">🎙️</span>
+        <span id="recordAudioLabel">Gravar Áudio da Aula</span>
+      </div>
+      <span class="kbd">Alt + R</span>
+    </button>
+
+    <div class="divider"></div>
+
     <button id="btnSnipArea" class="btn-primary">
-      <span>📐 Marcar Área (Recorte)</span>
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <span>📐</span>
+        <span>Marcar Área (Recorte)</span>
+      </div>
       <span class="kbd">Alt + S</span>
     </button>
 
     <button id="btnCaptureFull" class="btn-secondary">
-      <span>🖥️ Print da Tela Inteira</span>
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <span>🖥️</span>
+        <span>Print da Tela Inteira</span>
+      </div>
       <span class="kbd">Alt + Shift + S</span>
     </button>
   </div>

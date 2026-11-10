@@ -5,46 +5,85 @@ window.postMessage(
   {
     source: 'NOTEON_EXTENSION',
     type: 'EXTENSION_READY',
-    version: '1.0.0'
+    version: '1.2.0',
   },
   '*'
 );
 
-// Listen to capture messages from background script
+// Listen to messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 1. Screenshots & Cropped Slides
   if (message.type === 'NOTEON_EXTENSION_CAPTURE') {
-    // Forward image to NoteOn React application via window postMessage
     window.postMessage(
       {
         source: 'NOTEON_EXTENSION',
         type: 'SCREENSHOT_CAPTURED',
         dataUrl: message.dataUrl,
         pageTitle: message.pageTitle,
-        capturedAt: message.capturedAt || Date.now()
+        capturedAt: message.capturedAt || Date.now(),
       },
       '*'
     );
     sendResponse({ delivered: true });
+    return true;
+  }
+
+  // 2. Audio Recordings from Floating Recorder
+  if (message.type === 'NOTEON_EXTENSION_AUDIO') {
+    window.postMessage(
+      {
+        source: 'NOTEON_EXTENSION',
+        type: 'AUDIO_RECORDED',
+        dataUrl: message.dataUrl,
+        duration: message.duration,
+        transcript: message.transcript,
+        pageTitle: message.pageTitle,
+        recordedAt: message.recordedAt || Date.now(),
+      },
+      '*'
+    );
+    sendResponse({ delivered: true });
+    return true;
   }
 });
 
-// Check for any queued captures made while NoteOn was opening
-chrome.storage.local.get(['pendingCaptures'], (result) => {
-  const pending = result.pendingCaptures || [];
-  if (pending.length > 0) {
-    pending.forEach((cap) => {
+// Check for any queued captures or audios made while NoteOn was opening
+chrome.storage.local.get(['pendingCaptures', 'pendingAudios'], (result) => {
+  // Pending screenshots
+  const pendingCaptures = result.pendingCaptures || [];
+  if (pendingCaptures.length > 0) {
+    pendingCaptures.forEach((cap) => {
       window.postMessage(
         {
           source: 'NOTEON_EXTENSION',
           type: 'SCREENSHOT_CAPTURED',
           dataUrl: cap.dataUrl,
           pageTitle: cap.pageTitle,
-          capturedAt: cap.capturedAt
+          capturedAt: cap.capturedAt,
         },
         '*'
       );
     });
     chrome.storage.local.set({ pendingCaptures: [] });
   }
-});
 
+  // Pending audios
+  const pendingAudios = result.pendingAudios || [];
+  if (pendingAudios.length > 0) {
+    pendingAudios.forEach((audio) => {
+      window.postMessage(
+        {
+          source: 'NOTEON_EXTENSION',
+          type: 'AUDIO_RECORDED',
+          dataUrl: audio.dataUrl,
+          duration: audio.duration,
+          transcript: audio.transcript,
+          pageTitle: audio.pageTitle,
+          recordedAt: audio.recordedAt,
+        },
+        '*'
+      );
+    });
+    chrome.storage.local.set({ pendingAudios: [] });
+  }
+});

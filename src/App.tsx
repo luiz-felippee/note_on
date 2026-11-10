@@ -938,6 +938,67 @@ export default function App() {
             ? `📸 Print recebido do Plugin e salvo em ${formatDuration(recordingSeconds)} do áudio!`
             : '📸 Print recebido do Plugin e salvo na aula!'
         );
+      } else if (
+        (event.data.type === 'AUDIO_RECORDED' || event.data.type === 'AUDIO_CAPTURED') &&
+        event.data.dataUrl
+      ) {
+        setIsExtensionDetected(true);
+        let targetTopicId = selectedTopicId;
+        let targetSubjectId = selectedSubjectId;
+
+        if (!targetTopicId || !targetSubjectId) {
+          if (topics.length > 0) {
+            targetTopicId = topics[0].id;
+            targetSubjectId = topics[0].subjectId;
+            setSelectedTopicId(targetTopicId);
+            setSelectedSubjectId(targetSubjectId);
+          } else {
+            showToast('Crie ou selecione uma matéria e aula para salvar o áudio da extensão.', 'info');
+            return;
+          }
+        }
+
+        const plannedId = `rec-${Date.now()}`;
+        const finalDuration = Math.max(1, Math.round(event.data.duration || 10));
+        const transcriptToSave = (event.data.transcript || '').trim();
+        const titleText = event.data.pageTitle
+          ? `Áudio: ${event.data.pageTitle.slice(0, 50)}`
+          : 'Gravação da Extensão';
+
+        const sampledBars = Array.from({ length: 28 }, () =>
+          Number((0.3 + Math.random() * 0.55).toFixed(2))
+        );
+
+        await addTimelineEntry({
+          idOverride: plannedId,
+          topicIdOverride: targetTopicId,
+          subjectIdOverride: targetSubjectId,
+          type: 'audio',
+          title: titleText,
+          content: '',
+          transcript: transcriptToSave,
+          mediaDataUrl: event.data.dataUrl,
+          audioDurationSeconds: finalDuration,
+          audioWaveform: sampledBars,
+        });
+
+        showToast(
+          `🎙️ Áudio recebido da Extensão (${formatDuration(finalDuration)}) e salvo na aula!`,
+          'success'
+        );
+
+        // Auto-generate questions if speech transcript is rich
+        if (transcriptToSave && transcriptToSave.length > 15) {
+          generateQuestionsAndSave({
+            transcript: transcriptToSave,
+            topicTitle: currentTopic?.title || 'Aula',
+            subjectName: currentSubject?.name || 'Disciplina',
+            audioItemId: plannedId,
+            topicId: targetTopicId,
+            subjectId: targetSubjectId,
+            courseId: selectedCourseId || undefined,
+          });
+        }
       }
     };
 

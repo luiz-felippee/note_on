@@ -2,6 +2,8 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   const statusBadge = document.getElementById('statusBadge');
+  const btnRecordAudio = document.getElementById('btnRecordAudio');
+  const recordAudioLabel = document.getElementById('recordAudioLabel');
   const btnSnipArea = document.getElementById('btnSnipArea');
   const btnCaptureFull = document.getElementById('btnCaptureFull');
   const toast = document.getElementById('toast');
@@ -17,14 +19,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Snip Area
+  // Check if Audio Recording is active
+  chrome.runtime.sendMessage({ action: 'CHECK_AUDIO_RECORDING_STATUS' }, (res) => {
+    if (res && res.isRecording) {
+      btnRecordAudio.className = 'btn-audio btn-audio-active';
+      recordAudioLabel.textContent = '🔴 Gravando (Clique p/ Parar)';
+    }
+  });
+
+  // 1. Gravar Áudio com Botão Flutuante
+  btnRecordAudio.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'TRIGGER_RECORD_AUDIO' }, (res) => {
+      window.close();
+    });
+  });
+
+  // 2. Snip Area
   btnSnipArea.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'TRIGGER_SNIP_AREA' }, () => {
       window.close();
     });
   });
 
-  // Full Screen Capture
+  // 3. Full Screen Capture
   btnCaptureFull.addEventListener('click', () => {
     btnCaptureFull.disabled = true;
     chrome.runtime.sendMessage({ action: 'CAPTURE_FULL_NOW' }, (res) => {

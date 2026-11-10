@@ -138,7 +138,7 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
             </button>
           </div>
 
-          {/* Option 2: Chrome Extension (Alt + S across any tab) */}
+          {/* Option 2: Chrome Extension (Audio Recording + Alt + S / Alt + R across any tab) */}
           <div
             className={`p-3.5 rounded-xl border ${
               lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/40 border-slate-700/60'
@@ -146,18 +146,18 @@ export const ExtensionPluginModal: React.FC<ExtensionPluginModalProps> = ({
           >
             <div className="flex items-center gap-1.5 font-bold text-slate-200 mb-2">
               <Puzzle className="w-4 h-4 text-indigo-400" />
-              <span>Opção 2: Plugin do Navegador (Marcar Área em Outras Páginas)</span>
+              <span>Opção 2: Extensão do Navegador (Áudio Flutuante & Recorte de Slides)</span>
             </div>
             <p className="text-slate-400 text-xs mb-3">
-              Permite marcar com o mouse e recortar a área exata do slide em <strong>qualquer página</strong> da web (YouTube, Meet, PDF, Slides) pressionando{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-indigo-300 font-mono">
+              Grave o áudio de aulas em qualquer aba com botão flutuante de controle na tela com{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-emerald-300 font-mono font-bold">
+                Alt + R
+              </kbd>
+              {' '}e recorte slides com{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-indigo-300 font-mono font-bold">
                 Alt + S
               </kbd>
-              {' '}ou salvar a tela inteira com{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-indigo-300 font-mono">
-                Alt + Shift + S
-              </kbd>
-              .
+              {' '}(ou print com Alt + Shift + S). Tudo sincronizado automaticamente com o NoteOn!
             </p>
 
             <div className="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
