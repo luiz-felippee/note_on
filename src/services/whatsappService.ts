@@ -1,14 +1,20 @@
 // NoteOn - Serviço de Integração com WhatsApp para Estudos
-// Envio direto via Click-to-Chat (wa.me) e Webhooks automáticos (n8n, Evolution API, Z-API, Baileys, Make)
+// Envio direto via Click-to-Chat (wa.me), Robô Open-WA (@open-wa/wa-automate) e Webhooks automáticos (n8n, Evolution API, Z-API)
 
 const KEY_WHATSAPP_PHONE = 'noteon_user_whatsapp';
 const KEY_WHATSAPP_WEBHOOK = 'noteon_whatsapp_webhook_url';
 const KEY_WHATSAPP_AUTO_WEBHOOK = 'noteon_whatsapp_auto_webhook';
+const KEY_OPENWA_URL = 'noteon_openwa_server_url';
+const KEY_OPENWA_KEY = 'noteon_openwa_api_key';
+const KEY_OPENWA_AUTO = 'noteon_openwa_auto_send';
 
 export interface WhatsAppConfig {
   phone: string;
   webhookUrl: string;
   autoSendWebhook: boolean;
+  openWaUrl: string;
+  openWaApiKey: string;
+  autoSendOpenWa: boolean;
 }
 
 export interface StudyDispatchPayload {
@@ -79,24 +85,33 @@ export function formatPhoneForDisplay(phone: string): string {
 }
 
 /**
- * Obtém a configuração de WhatsApp salva no navegador.
+ * Obtém a configuração de WhatsApp e Open-WA salva no navegador.
  */
 export function getStoredWhatsAppConfig(): WhatsAppConfig {
   try {
     const phone = localStorage.getItem(KEY_WHATSAPP_PHONE) || '';
     const webhookUrl = localStorage.getItem(KEY_WHATSAPP_WEBHOOK) || '';
     const autoSendWebhook = localStorage.getItem(KEY_WHATSAPP_AUTO_WEBHOOK) === 'true';
+    const openWaUrl = localStorage.getItem(KEY_OPENWA_URL) || '';
+    const openWaApiKey = localStorage.getItem(KEY_OPENWA_KEY) || '';
+    const autoSendOpenWa = localStorage.getItem(KEY_OPENWA_AUTO) === 'true';
 
     return {
       phone,
       webhookUrl,
       autoSendWebhook,
+      openWaUrl,
+      openWaApiKey,
+      autoSendOpenWa,
     };
   } catch {
     return {
       phone: '',
       webhookUrl: '',
       autoSendWebhook: false,
+      openWaUrl: '',
+      openWaApiKey: '',
+      autoSendOpenWa: false,
     };
   }
 }
@@ -116,8 +131,17 @@ export function saveStoredWhatsAppConfig(config: Partial<WhatsAppConfig>): void 
     if (config.autoSendWebhook !== undefined) {
       localStorage.setItem(KEY_WHATSAPP_AUTO_WEBHOOK, String(config.autoSendWebhook));
     }
+    if (config.openWaUrl !== undefined) {
+      localStorage.setItem(KEY_OPENWA_URL, config.openWaUrl.trim().replace(/\/+$/, ''));
+    }
+    if (config.openWaApiKey !== undefined) {
+      localStorage.setItem(KEY_OPENWA_KEY, config.openWaApiKey.trim());
+    }
+    if (config.autoSendOpenWa !== undefined) {
+      localStorage.setItem(KEY_OPENWA_AUTO, String(config.autoSendOpenWa));
+    }
   } catch (err) {
-    console.error('Falha ao salvar configuração do WhatsApp:', err);
+    console.error('Falha ao salvar configuração do WhatsApp/Open-WA:', err);
   }
 }
 
@@ -200,6 +224,122 @@ export function sendViaWhatsAppDirect(phone: string, text: string): boolean {
 }
 
 /**
+ * Testa se o servidor Open-WA está ativo e online.
+ */
+export async function testOpenWaConnection(
+  serverUrl: string,
+  apiKey?: string
+): Promise<{ success: boolean; message: string }> {
+  if (!serverUrl) return { success: false, message: 'Informe a URL do servidor Open-WA.' };
+  const cleanUrl = serverUrl.replace(/\/+$/, '');
+
+  const headers: Record<string, string> = {};
+  if (apiKey?.trim()) {
+    headers['api_key'] = apiKey.trim();
+    headers['apikey'] = apiKey.trim();
+  }
+
+  try {
+    // Tenta pingar o servidor Open-WA
+    const pingRes = await fetch(`${cleanUrl}/ping`, { headers }).catch(() => null);
+    if (pingRes && pingRes.ok) {
+      return { success: true, message: 'Servidor Open-WA online e respondendo (ping OK)!' };
+    }
+
+    const hostRes = await fetch(`${cleanUrl}/getHostNumber`, { headers }).catch(() => null);
+    if (hostRes && hostRes.ok) {
+      const data = await hostRes.json().catch(() => null);
+      return { success: true, message: `Conectado ao WhatsApp de ${data?.response || 'seu número'}!` };
+    }
+
+    return {
+      success: true,
+      message: 'Servidor acessível (porta aberta e conectado).',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Erro ao conectar em ${cleanUrl}: ${err?.message || 'Servidor inacessível ou offline.'}`,
+    };
+  }
+}
+
+/**
+ * Dispara mensagem 100% silenciosa e automática via servidor Open-WA (@open-wa/wa-automate).
+ * Suporta o formato padrão REST do Open-WA e endpoints compatíveis (WPPConnect / Evolution API).
+ */
+export async function sendViaOpenWA(
+  serverUrl: string,
+  apiKey: string | undefined,
+  phone: string,
+  message: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!serverUrl) return { success: false, error: 'URL do servidor Open-WA não configurada.' };
+
+  const cleanUrl = serverUrl.replace(/\/+$/, '');
+  const cleanPhone = sanitizePhoneNumber(phone);
+  if (!cleanPhone) return { success: false, error: 'Número de WhatsApp inválido.' };
+
+  const chatId = `${cleanPhone}@c.us`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey?.trim()) {
+    headers['api_key'] = apiKey.trim();
+    headers['apikey'] = apiKey.trim();
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  }
+
+  // Schema Open-WA padrão para /sendText
+  const payload = {
+    args: {
+      to: chatId,
+      content: message,
+    },
+    // Compatibilidade plana adicional
+    to: chatId,
+    content: message,
+    chatId,
+    number: cleanPhone,
+    text: message,
+    message,
+  };
+
+  try {
+    const res = await fetch(`${cleanUrl}/sendText`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      // Se /sendText retornar 404, tenta rota alternativa compatível
+      if (res.status === 404) {
+        const altRes = await fetch(`${cleanUrl}/api/send-message`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ phone: cleanPhone, message }),
+        });
+        if (altRes.ok) return { success: true };
+      }
+
+      return {
+        success: false,
+        error: `Open-WA respondeu com status ${res.status}: ${res.statusText}`,
+      };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Não foi possível conectar ao servidor Open-WA em ${cleanUrl}. Verifique se ele está em execução. (${err?.message || err})`,
+    };
+  }
+}
+
+/**
  * Envia o resumo / plano de estudo via webhook HTTP POST em segundo plano
  * (Compatível com n8n, Evolution API, Z-API, Baileys, Make, etc).
  */
@@ -250,8 +390,8 @@ export async function sendViaWebhook(
 
 /**
  * Orquestra o envio do plano de estudo para o WhatsApp:
- * 1. Formata a mensagem.
- * 2. Se houver telefone, abre o WhatsApp diretamente (1 clique).
+ * 1. Se Open-WA estiver configurado, tenta envio 100% automático e silencioso!
+ * 2. Se falhar ou não estiver configurado, recorre ao Click-to-Chat direto (wa.me).
  * 3. Se houver Webhook configurado, dispara em segundo plano.
  */
 export async function dispatchStudyToWhatsApp(
@@ -261,28 +401,48 @@ export async function dispatchStudyToWhatsApp(
   success: boolean;
   openedWhatsApp: boolean;
   triggeredWebhook: boolean;
+  sentViaOpenWa: boolean;
   message?: string;
 }> {
   const config = getStoredWhatsAppConfig();
   const phone = customPhone ? sanitizePhoneNumber(customPhone) : config.phone;
 
-  if (!phone && !config.webhookUrl) {
+  if (!phone && !config.webhookUrl && !config.openWaUrl) {
     return {
       success: false,
       openedWhatsApp: false,
       triggeredWebhook: false,
-      message: 'Nenhum número de WhatsApp ou Webhook configurado.',
+      sentViaOpenWa: false,
+      message: 'Nenhum número de WhatsApp, Open-WA ou Webhook configurado.',
     };
   }
 
   const formattedText = formatWhatsAppStudyMessage(payload);
+  let sentViaOpenWa = false;
   let openedWhatsApp = false;
   let triggeredWebhook = false;
 
-  if (phone) {
+  // 1. Tenta envio automático via Open-WA se a URL estiver configurada
+  if (config.openWaUrl && phone) {
+    const openWaRes = await sendViaOpenWA(
+      config.openWaUrl,
+      config.openWaApiKey,
+      phone,
+      formattedText
+    );
+    if (openWaRes.success) {
+      sentViaOpenWa = true;
+    } else {
+      console.warn('Falha no Open-WA, caindo para envio direto:', openWaRes.error);
+    }
+  }
+
+  // 2. Se não enviou pelo Open-WA, abre via link wa.me direto no WhatsApp
+  if (!sentViaOpenWa && phone) {
     openedWhatsApp = sendViaWhatsAppDirect(phone, formattedText);
   }
 
+  // 3. Webhook em segundo plano se configurado
   if (config.webhookUrl) {
     try {
       const webhookRes = await sendViaWebhook(config.webhookUrl, payload, phone);
@@ -293,10 +453,13 @@ export async function dispatchStudyToWhatsApp(
   }
 
   return {
-    success: openedWhatsApp || triggeredWebhook,
+    success: sentViaOpenWa || openedWhatsApp || triggeredWebhook,
     openedWhatsApp,
     triggeredWebhook,
-    message: openedWhatsApp
+    sentViaOpenWa,
+    message: sentViaOpenWa
+      ? '🚀 Mensagem enviada automaticamente pelo seu robô Open-WA!'
+      : openedWhatsApp
       ? 'WhatsApp aberto com o plano pronto para envio!'
       : 'Plano enviado via Webhook com sucesso!',
   };

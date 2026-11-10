@@ -41,6 +41,9 @@ import {
   formatPhoneForDisplay,
   sanitizePhoneNumber,
   sendViaWebhook,
+  sendViaOpenWA,
+  testOpenWaConnection,
+  formatWhatsAppStudyMessage,
 } from '../services/whatsappService';
 
 interface StudyAiChatModalProps {
@@ -82,11 +85,16 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
   );
   const [savedKeysSuccess, setSavedKeysSuccess] = useState(false);
 
-  // WhatsApp Integration states
+  // WhatsApp & Open-WA Integration states
   const [whatsappConfig, setWhatsappConfig] = useState(getStoredWhatsAppConfig());
   const [whatsappPhone, setWhatsappPhone] = useState(formatPhoneForDisplay(whatsappConfig.phone));
   const [whatsappWebhook, setWhatsappWebhook] = useState(whatsappConfig.webhookUrl);
   const [whatsappAutoWebhook, setWhatsappAutoWebhook] = useState(whatsappConfig.autoSendWebhook);
+  const [openWaUrl, setOpenWaUrl] = useState(whatsappConfig.openWaUrl || '');
+  const [openWaApiKey, setOpenWaApiKey] = useState(whatsappConfig.openWaApiKey || '');
+  const [autoSendOpenWa, setAutoSendOpenWa] = useState(whatsappConfig.autoSendOpenWa || false);
+  const [openWaTesting, setOpenWaTesting] = useState(false);
+  const [openWaTestResult, setOpenWaTestResult] = useState<string | null>(null);
 
   // Quick prompt for phone when user clicks Send to WhatsApp for the first time
   const [showPhonePromptModal, setShowPhonePromptModal] = useState(false);
@@ -171,7 +179,35 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
 
       setMessages((prev) => [...prev, assistantMsg]);
 
-      // Disparo automático via Webhook se ativado pelo usuário
+      // 1. Disparo automático via Robô Open-WA se ativado pelo usuário
+      if (
+        assistantMsg.isStudyPlan &&
+        whatsappConfig.autoSendOpenWa &&
+        whatsappConfig.openWaUrl &&
+        whatsappConfig.phone
+      ) {
+        const studyText = formatWhatsAppStudyMessage({
+          topicTitle: topic.title,
+          subjectName: subject?.name,
+          courseName: course?.name,
+          content: assistantMsg.content,
+          audioCount: items.filter((i) => i.type === 'audio').length,
+          photoCount: items.filter((i) => i.type === 'photo').length,
+          questionsCount: questions.length,
+        });
+        sendViaOpenWA(
+          whatsappConfig.openWaUrl,
+          whatsappConfig.openWaApiKey,
+          whatsappConfig.phone,
+          studyText
+        ).then((r) => {
+          if (r.success) {
+            showToast('Plano disparado automaticamente pelo robô Open-WA!', 'success');
+          }
+        }).catch((err) => console.warn('Erro ao disparar Open-WA automático:', err));
+      }
+
+      // 2. Disparo automático via Webhook se ativado pelo usuário
       if (
         assistantMsg.isStudyPlan &&
         whatsappConfig.autoSendWebhook &&
@@ -204,6 +240,23 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
     }
   };
 
+  const handleTestOpenWa = async () => {
+    if (!openWaUrl.trim()) {
+      showToast('Informe a URL do servidor Open-WA primeiro.', 'info');
+      return;
+    }
+    setOpenWaTesting(true);
+    setOpenWaTestResult(null);
+    const res = await testOpenWaConnection(openWaUrl, openWaApiKey);
+    setOpenWaTesting(false);
+    setOpenWaTestResult(res.message);
+    if (res.success) {
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'info');
+    }
+  };
+
   const handleSaveKeys = (e: React.FormEvent) => {
     e.preventDefault();
     const updated = {
@@ -213,22 +266,28 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
     saveStoredAiKeys(updated);
     setKeysConfig(updated);
 
-    // Salva configurações do WhatsApp
+    // Salva configurações do WhatsApp e Open-WA
     const cleanedPhone = sanitizePhoneNumber(whatsappPhone);
     saveStoredWhatsAppConfig({
       phone: cleanedPhone,
       webhookUrl: whatsappWebhook,
       autoSendWebhook: whatsappAutoWebhook,
+      openWaUrl,
+      openWaApiKey,
+      autoSendOpenWa,
     });
     setWhatsappConfig({
       phone: cleanedPhone,
       webhookUrl: whatsappWebhook.trim(),
       autoSendWebhook: whatsappAutoWebhook,
+      openWaUrl: openWaUrl.trim(),
+      openWaApiKey: openWaApiKey.trim(),
+      autoSendOpenWa,
     });
     setWhatsappPhone(formatPhoneForDisplay(cleanedPhone));
 
     setSavedKeysSuccess(true);
-    showToast('Provedores, modelos e WhatsApp salvos!');
+    showToast('Configurações de IA, WhatsApp e Open-WA salvas!');
     setTimeout(() => {
       setSavedKeysSuccess(false);
       setShowConfig(false);
@@ -556,15 +615,15 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                 </div>
               </div>
 
-              {/* Seção WhatsApp para Estudos */}
-              <div className="p-3.5 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 space-y-3">
+              {/* Seção WhatsApp & Open-WA para Estudos */}
+              <div className="p-3.5 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 space-y-3.5">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-emerald-300 flex items-center gap-1.5 text-xs">
                     <MessageCircle className="w-4 h-4 text-emerald-400" />
-                    <span>Envio de Planos & Resumos para o WhatsApp</span>
+                    <span>Envio para WhatsApp (Direto, Robô Open-WA ou Webhook)</span>
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
-                    1-Clique & Webhook
+                    Open-WA / wa.me
                   </span>
                 </div>
 
@@ -582,30 +641,93 @@ export const StudyAiChatModal: React.FC<StudyAiChatModalProps> = ({
                       className="w-full text-xs rounded-xl px-3 py-2 bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Ao clicar em "Mandar pro WhatsApp", abre com o plano já formatado.
+                      Usado tanto no envio 1-clique (wa.me) quanto no robô automático Open-WA.
                     </span>
                   </div>
 
-                  <div>
-                    <label className="text-[11px] text-slate-300 font-medium block mb-1">
-                      Webhook Opcional (n8n / Evolution API / Z-API):
+                  {/* Open-WA Automated Bot Configuration */}
+                  <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-slate-900/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-300 flex items-center gap-1">
+                        <span>🤖 Robô Open-WA (Automático)</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleTestOpenWa}
+                        disabled={openWaTesting || !openWaUrl}
+                        className="px-2 py-0.5 rounded-md bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold cursor-pointer transition disabled:opacity-40"
+                      >
+                        {openWaTesting ? 'Testando...' : 'Testar Conexão'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Servidor Open-WA URL:</label>
+                        <input
+                          type="url"
+                          value={openWaUrl}
+                          onChange={(e) => setOpenWaUrl(e.target.value)}
+                          placeholder="http://localhost:8080"
+                          className="w-full text-[11px] rounded-lg px-2 py-1.5 bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">API Key / Token (opcional):</label>
+                        <input
+                          type="password"
+                          value={openWaApiKey}
+                          onChange={(e) => setOpenWaApiKey(e.target.value)}
+                          placeholder="Sua chave secreta..."
+                          className="w-full text-[11px] rounded-lg px-2 py-1.5 bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    {openWaTestResult && (
+                      <span className="text-[10px] text-emerald-300 block font-medium">
+                        {openWaTestResult}
+                      </span>
+                    )}
+
+                    <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoSendOpenWa}
+                        onChange={(e) => setAutoSendOpenWa(e.target.checked)}
+                        className="rounded text-emerald-500 focus:ring-emerald-400"
+                      />
+                      <span className="text-[10px] text-emerald-300 font-medium">
+                        Disparo 100% automático silencioso no Open-WA ao gerar plano
+                      </span>
                     </label>
-                    <input
-                      type="url"
-                      value={whatsappWebhook}
-                      onChange={(e) => setWhatsappWebhook(e.target.value)}
-                      placeholder="https://seu-servidor-whatsapp/webhook"
-                      className="w-full text-xs rounded-xl px-3 py-2 bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                  </div>
+                </div>
+
+                {/* Optional Webhook for n8n/Make/Evolution API */}
+                <div className="pt-2 border-t border-emerald-500/20">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-400 block mb-0.5">
+                        Webhook Alternativo (n8n / Evolution API / Z-API / Make):
+                      </label>
+                      <input
+                        type="url"
+                        value={whatsappWebhook}
+                        onChange={(e) => setWhatsappWebhook(e.target.value)}
+                        placeholder="https://seu-servidor-whatsapp/webhook"
+                        className="w-full text-xs rounded-xl px-3 py-1.5 bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <label className="flex items-center gap-1.5 cursor-pointer sm:pt-4">
                       <input
                         type="checkbox"
                         checked={whatsappAutoWebhook}
                         onChange={(e) => setWhatsappAutoWebhook(e.target.checked)}
                         className="rounded text-emerald-500 focus:ring-emerald-400"
                       />
-                      <span className="text-[10px] text-slate-300">
-                        Disparo 100% automático no webhook ao gerar planos
+                      <span className="text-[10px] text-slate-300 whitespace-nowrap">
+                        Disparo automático no Webhook
                       </span>
                     </label>
                   </div>
