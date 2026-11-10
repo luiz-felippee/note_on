@@ -901,24 +901,97 @@ export default function App() {
     const handleExtensionMessage = async (event: MessageEvent) => {
       if (!event.data || event.data.source !== 'NOTEON_EXTENSION') return;
 
+      const resolveTargetTopic = async (): Promise<{ topicId: string; subjectId: string }> => {
+        if (selectedTopicId && selectedSubjectId) {
+          return { topicId: selectedTopicId, subjectId: selectedSubjectId };
+        }
+
+        // 1. Tópicos já no estado React
+        if (topics && topics.length > 0) {
+          const found = topics[0];
+          setSelectedTopicId(found.id);
+          setSelectedSubjectId(found.subjectId);
+          return { topicId: found.id, subjectId: found.subjectId };
+        }
+
+        // 2. Tópicos salvos no IndexedDB
+        try {
+          const dbTopics = await getAllTopics();
+          if (dbTopics && dbTopics.length > 0) {
+            const found = dbTopics[0];
+            setTopics(dbTopics);
+            setSelectedTopicId(found.id);
+            setSelectedSubjectId(found.subjectId);
+            return { topicId: found.id, subjectId: found.subjectId };
+          }
+        } catch (_) {}
+
+        // 3. Matérias disponíveis
+        let dbSubjects: Subject[] = subjects;
+        if (!dbSubjects || dbSubjects.length === 0) {
+          try {
+            dbSubjects = await getAllSubjects();
+          } catch (_) {}
+        }
+
+        let courseId = selectedCourseId;
+        if (!courseId) {
+          try {
+            const dbCourses = courses.length > 0 ? courses : await getAllCourses();
+            if (dbCourses && dbCourses.length > 0) {
+              courseId = dbCourses[0].id;
+              setSelectedCourseId(courseId);
+            } else {
+              courseId = 'course-default';
+            }
+          } catch (_) {
+            courseId = 'course-default';
+          }
+        }
+
+        const now = Date.now();
+        let targetSubj: Subject;
+        if (dbSubjects && dbSubjects.length > 0) {
+          targetSubj = dbSubjects[0];
+        } else {
+          targetSubj = {
+            id: `subj-ext-${now}`,
+            courseId: courseId || 'course-default',
+            name: 'Aulas & Gravações',
+            color: '#6366f1',
+            icon: 'BookOpen',
+            createdAt: now,
+            updatedAt: now,
+          };
+          await saveSubject(targetSubj);
+          setSubjects((prev) => [targetSubj, ...prev]);
+        }
+
+        // Criar tópico para receber gravações e prints
+        const targetTop: StudyTopic = {
+          id: `topic-ext-${now}`,
+          courseId: targetSubj.courseId,
+          subjectId: targetSubj.id,
+          title: 'Gravações da Extensão',
+          date: new Date().toISOString().slice(0, 10),
+          startTime: new Date().toLocaleTimeString('pt-BR'),
+          studyDurationSeconds: 0,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await saveTopic(targetTop);
+        setTopics((prev) => [targetTop, ...prev]);
+        setSelectedSubjectId(targetSubj.id);
+        setSelectedTopicId(targetTop.id);
+
+        return { topicId: targetTop.id, subjectId: targetSubj.id };
+      };
+
       if (event.data.type === 'EXTENSION_READY') {
         setIsExtensionDetected(true);
       } else if (event.data.type === 'SCREENSHOT_CAPTURED' && event.data.dataUrl) {
         setIsExtensionDetected(true);
-        let targetTopicId = selectedTopicId;
-        let targetSubjectId = selectedSubjectId;
-
-        if (!targetTopicId || !targetSubjectId) {
-          if (topics.length > 0) {
-            targetTopicId = topics[0].id;
-            targetSubjectId = topics[0].subjectId;
-            setSelectedTopicId(targetTopicId);
-            setSelectedSubjectId(targetSubjectId);
-          } else {
-            showToast('Crie ou selecione uma matéria e aula para salvar prints do plugin.', 'info');
-            return;
-          }
-        }
+        const { topicId: targetTopicId, subjectId: targetSubjectId } = await resolveTargetTopic();
 
         const titleText = event.data.pageTitle
           ? `Print: ${event.data.pageTitle.slice(0, 50)}`
@@ -943,20 +1016,7 @@ export default function App() {
         event.data.dataUrl
       ) {
         setIsExtensionDetected(true);
-        let targetTopicId = selectedTopicId;
-        let targetSubjectId = selectedSubjectId;
-
-        if (!targetTopicId || !targetSubjectId) {
-          if (topics.length > 0) {
-            targetTopicId = topics[0].id;
-            targetSubjectId = topics[0].subjectId;
-            setSelectedTopicId(targetTopicId);
-            setSelectedSubjectId(targetSubjectId);
-          } else {
-            showToast('Crie ou selecione uma matéria e aula para salvar o áudio da extensão.', 'info');
-            return;
-          }
-        }
+        const { topicId: targetTopicId, subjectId: targetSubjectId } = await resolveTargetTopic();
 
         const plannedId = `rec-${Date.now()}`;
         const finalDuration = Math.max(1, Math.round(event.data.duration || 10));

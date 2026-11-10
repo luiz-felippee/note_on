@@ -446,6 +446,12 @@
     }
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try {
+        if (mediaRecorder.state === 'recording') {
+          mediaRecorder.requestData();
+        }
+      } catch (_) {}
+
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
         const reader = new FileReader();
@@ -475,6 +481,12 @@
               }
             }
           );
+
+          // Safe fallback cleanup if runtime callback takes too long
+          setTimeout(() => {
+            const el = document.getElementById('noteon-floating-audio-recorder');
+            if (el) cleanupAll();
+          }, 3500);
         };
 
         reader.readAsDataURL(audioBlob);

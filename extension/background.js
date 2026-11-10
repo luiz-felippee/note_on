@@ -5,11 +5,16 @@ async function findNoteOnTabs() {
   const allTabs = await chrome.tabs.query({});
   return allTabs.filter((tab) => {
     if (!tab.url) return false;
+    const url = tab.url.toLowerCase();
+    const title = (tab.title || '').toLowerCase();
     return (
-      tab.url.includes('localhost') ||
-      tab.url.includes('127.0.0.1') ||
-      tab.url.includes('vercel.app') ||
-      tab.url.includes('noteon')
+      url.includes('localhost') ||
+      url.includes('127.0.0.1') ||
+      url.includes('vercel.app') ||
+      url.includes('noteon') ||
+      url.includes('note_on') ||
+      title.includes('noteon') ||
+      title.includes('note on')
     );
   });
 }
@@ -17,102 +22,126 @@ async function findNoteOnTabs() {
 // Forward screenshot dataUrl to NoteOn
 async function forwardToNoteOn(dataUrl, pageTitle) {
   const noteOnTabs = await findNoteOnTabs();
+  let deliveredDirectly = false;
+
+  const capturePayload = {
+    dataUrl,
+    pageTitle: pageTitle || 'Slide da Aula',
+    capturedAt: Date.now(),
+  };
 
   if (noteOnTabs.length > 0) {
-    const targetTab = noteOnTabs[0];
+    for (const tab of noteOnTabs) {
+      try {
+        const response = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'NOTEON_EXTENSION_CAPTURE',
+              ...capturePayload,
+            },
+            (res) => {
+              if (chrome.runtime.lastError) {
+                resolve(null);
+              } else {
+                resolve(res);
+              }
+            }
+          );
+        });
 
-    chrome.tabs.sendMessage(
-      targetTab.id,
-      {
-        type: 'NOTEON_EXTENSION_CAPTURE',
-        dataUrl,
-        pageTitle: pageTitle || 'Slide da Aula',
-        capturedAt: Date.now(),
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          console.log('Tentativa de envio sendMessage:', chrome.runtime.lastError.message);
+        if (response && response.delivered) {
+          deliveredDirectly = true;
+          break;
         }
-      }
-    );
+      } catch (_) {}
+    }
+  }
 
-    chrome.action.setBadgeText({ text: '✓' });
-    chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
-    setTimeout(() => {
-      chrome.action.setBadgeText({ text: '' });
-    }, 2500);
-
-    return { success: true, targetTabId: targetTab.id };
-  } else {
-    // Save in queue
+  if (!deliveredDirectly) {
     const existingQueue = (await chrome.storage.local.get(['pendingCaptures'])).pendingCaptures || [];
-    existingQueue.push({
-      dataUrl,
-      pageTitle: pageTitle || 'Slide da Aula',
-      capturedAt: Date.now(),
-    });
+    existingQueue.push(capturePayload);
     await chrome.storage.local.set({ pendingCaptures: existingQueue });
 
-    chrome.action.setBadgeText({ text: '!' });
+    chrome.action.setBadgeText({ text: '📸✓' });
     chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
     setTimeout(() => {
       chrome.action.setBadgeText({ text: '' });
     }, 4000);
 
-    return { success: false, reason: 'no_noteon_tab' };
+    return { success: true, queued: true };
+  } else {
+    chrome.action.setBadgeText({ text: '📸✓' });
+    chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 2500);
+
+    return { success: true, deliveredDirectly: true };
   }
 }
 
 // Forward recorded audio to NoteOn
 async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
   const noteOnTabs = await findNoteOnTabs();
+  let deliveredDirectly = false;
+
+  const audioPayload = {
+    dataUrl,
+    duration,
+    transcript,
+    pageTitle: pageTitle || 'Áudio da Aula (Extensão)',
+    recordedAt: Date.now(),
+  };
 
   if (noteOnTabs.length > 0) {
-    const targetTab = noteOnTabs[0];
+    for (const tab of noteOnTabs) {
+      try {
+        const response = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'NOTEON_EXTENSION_AUDIO',
+              ...audioPayload,
+            },
+            (res) => {
+              if (chrome.runtime.lastError) {
+                resolve(null);
+              } else {
+                resolve(res);
+              }
+            }
+          );
+        });
 
-    chrome.tabs.sendMessage(
-      targetTab.id,
-      {
-        type: 'NOTEON_EXTENSION_AUDIO',
-        dataUrl,
-        duration,
-        transcript,
-        pageTitle: pageTitle || 'Áudio da Aula (Extensão)',
-        recordedAt: Date.now(),
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          console.log('Tentativa de envio sendMessage áudio:', chrome.runtime.lastError.message);
+        if (response && response.delivered) {
+          deliveredDirectly = true;
+          break;
         }
-      }
-    );
+      } catch (_) {}
+    }
+  }
 
+  if (!deliveredDirectly) {
+    const existingQueue = (await chrome.storage.local.get(['pendingAudios'])).pendingAudios || [];
+    existingQueue.push(audioPayload);
+    await chrome.storage.local.set({ pendingAudios: existingQueue });
+
+    chrome.action.setBadgeText({ text: '🎙️✓' });
+    chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 4500);
+
+    return { success: true, queued: true };
+  } else {
     chrome.action.setBadgeText({ text: '🎙️✓' });
     chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
     setTimeout(() => {
       chrome.action.setBadgeText({ text: '' });
     }, 3500);
 
-    return { success: true, targetTabId: targetTab.id };
-  } else {
-    // Save in audio queue
-    const existingQueue = (await chrome.storage.local.get(['pendingAudios'])).pendingAudios || [];
-    existingQueue.push({
-      dataUrl,
-      duration,
-      transcript,
-      pageTitle: pageTitle || 'Áudio da Aula (Extensão)',
-      recordedAt: Date.now(),
-    });
-    await chrome.storage.local.set({ pendingAudios: existingQueue });
-
-    chrome.action.setBadgeText({ text: '🎙️!' });
-    chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
-    setTimeout(() => {
-      chrome.action.setBadgeText({ text: '' });
-    }, 4500);
-
-    return { success: false, reason: 'no_noteon_tab' };
+    return { success: true, deliveredDirectly: true };
   }
 }
 
