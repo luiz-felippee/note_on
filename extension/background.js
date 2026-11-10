@@ -21,6 +21,37 @@ async function findNoteOnTabs() {
   });
 }
 
+const DEFAULT_CLOUD_API_BASE = 'https://note-on.pages.dev';
+
+// Upload print or audio directly to NoteOn Cloud D1 API (works across different computers even with NoteOn tab closed!)
+async function uploadDirectToCloud(payload) {
+  try {
+    const stored = await chrome.storage.local.get(['cloudToken', 'cloudApiBase']);
+    const token = stored.cloudToken;
+    if (!token) return false;
+
+    const apiBase = stored.cloudApiBase || DEFAULT_CLOUD_API_BASE;
+    const res = await fetch(`${apiBase}/api/sync?_t=${Date.now()}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: 'extension_upload',
+        ...payload,
+      }),
+    });
+
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data && data.success);
+  } catch (err) {
+    console.warn('Erro ao enviar diretamente para NoteOn Cloud:', err);
+    return false;
+  }
+}
+
 // Forward screenshot dataUrl to NoteOn
 async function forwardToNoteOn(dataUrl, pageTitle) {
   const noteOnTabs = await findNoteOnTabs();
@@ -60,7 +91,17 @@ async function forwardToNoteOn(dataUrl, pageTitle) {
     }
   }
 
+  // Se a aba do NoteOn não estiver aberta neste computador, sobe direto para a Nuvem (para aparecer nos outros PCs e celular!)
+  let uploadedToCloud = false;
   if (!deliveredDirectly) {
+    uploadedToCloud = await uploadDirectToCloud({
+      captureType: 'photo',
+      dataUrl,
+      pageTitle: capturePayload.pageTitle,
+    });
+  }
+
+  if (!deliveredDirectly && !uploadedToCloud) {
     const existingQueue = (await chrome.storage.local.get(['pendingCaptures'])).pendingCaptures || [];
     existingQueue.push(capturePayload);
     await chrome.storage.local.set({ pendingCaptures: existingQueue });
@@ -79,7 +120,7 @@ async function forwardToNoteOn(dataUrl, pageTitle) {
       chrome.action.setBadgeText({ text: '' });
     }, 2500);
 
-    return { success: true, deliveredDirectly: true };
+    return { success: true, deliveredDirectly: true, uploadedToCloud };
   }
 }
 
@@ -124,7 +165,19 @@ async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
     }
   }
 
+  // Se a aba do NoteOn não estiver aberta neste computador, sobe o áudio direto para a Nuvem!
+  let uploadedToCloud = false;
   if (!deliveredDirectly) {
+    uploadedToCloud = await uploadDirectToCloud({
+      captureType: 'audio',
+      dataUrl,
+      duration,
+      transcript,
+      pageTitle: audioPayload.pageTitle,
+    });
+  }
+
+  if (!deliveredDirectly && !uploadedToCloud) {
     const existingQueue = (await chrome.storage.local.get(['pendingAudios'])).pendingAudios || [];
     existingQueue.push(audioPayload);
     await chrome.storage.local.set({ pendingAudios: existingQueue });
@@ -143,7 +196,7 @@ async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
       chrome.action.setBadgeText({ text: '' });
     }, 3500);
 
-    return { success: true, deliveredDirectly: true };
+    return { success: true, deliveredDirectly: true, uploadedToCloud };
   }
 }
 
@@ -277,7 +330,51 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'CHECK_NOTEON_STATUS') {
     (async () => {
       const tabs = await findNoteOnTabs();
-      sendResponse({ isConnected: tabs.length > 0, count: tabs.length });
+      const stored = await chrome.storage.local.get(['cloudUser', 'cloudToken']);
+      sendResponse({
+        isConnected: tabs.length > 0 || Boolean(stored.cloudToken),
+        hasOpenTab: tabs.length > 0,
+        cloudUser: stored.cloudUser || null,
+        count: tabs.length,
+      });
+    })();
+    return true;
+  }
+
+  if (request.action === 'EXTENSION_CLOUD_LOGIN') {
+    (async () => {
+      try {
+        const res = await fetch(`${DEFAULT_CLOUD_API_BASE}/api/auth?action=login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'login',
+            email: request.email,
+            password: request.password,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.token) {
+          sendResponse({ success: false, error: data.error || 'Falha no login.' });
+          return;
+        }
+        await chrome.storage.local.set({
+          cloudToken: data.token,
+          cloudUser: data.user,
+          cloudApiBase: DEFAULT_CLOUD_API_BASE,
+        });
+        sendResponse({ success: true, user: data.user });
+      } catch (err) {
+        sendResponse({ success: false, error: 'Erro de conexão com a nuvem.' });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === 'EXTENSION_CLOUD_LOGOUT') {
+    (async () => {
+      await chrome.storage.local.remove(['cloudToken', 'cloudUser']);
+      sendResponse({ success: true });
     })();
     return true;
   }

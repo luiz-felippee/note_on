@@ -124,17 +124,43 @@ function initNoteOnBridge() {
     });
   }
 
+  // Automatically copy Cloud Session from NoteOn Web App into Extension Storage
+  function syncCloudSessionFromWebApp() {
+    try {
+      const token = localStorage.getItem('noteon_cloud_jwt_v1');
+      const userRaw = localStorage.getItem('noteon_cloud_user_v1');
+      if (token && userRaw) {
+        const user = JSON.parse(userRaw);
+        chrome.storage.local.set({
+          cloudToken: token,
+          cloudUser: user,
+          cloudApiBase: window.location.origin.includes('localhost')
+            ? 'https://note-on.pages.dev'
+            : window.location.origin,
+        });
+      }
+    } catch (_) {}
+  }
+
   // 1. Check immediately
+  syncCloudSessionFromWebApp();
   checkAndDeliverPending();
 
   // 2. Check when user switches to NoteOn tab
-  window.addEventListener('focus', checkAndDeliverPending);
+  window.addEventListener('focus', () => {
+    syncCloudSessionFromWebApp();
+    checkAndDeliverPending();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      syncCloudSessionFromWebApp();
       checkAndDeliverPending();
     }
   });
 
   // 3. Periodic check every 2 seconds
-  setInterval(checkAndDeliverPending, 2000);
+  setInterval(() => {
+    syncCloudSessionFromWebApp();
+    checkAndDeliverPending();
+  }, 2000);
 }

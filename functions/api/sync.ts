@@ -321,6 +321,149 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         }
 
         const now = Date.now();
+
+        // Upload direto vindo da Extensão do Chrome (de qualquer computador!)
+        if (clientData.action === 'extension_upload' && clientData.dataUrl) {
+          let activeCourse: any = null;
+          let activeSubject: any = null;
+          let activeTopic: any = null;
+
+          for (const [, entry] of existingMap.entries()) {
+            if (entry.deletedAt) continue;
+            try {
+              const parsed = JSON.parse(entry.data);
+              if (entry.entityType === 'courses') {
+                if (!activeCourse || (parsed.updatedAt || 0) >= (activeCourse.updatedAt || 0)) {
+                  activeCourse = parsed;
+                }
+              } else if (entry.entityType === 'subjects') {
+                if (!activeSubject || (parsed.updatedAt || 0) >= (activeSubject.updatedAt || 0)) {
+                  activeSubject = parsed;
+                }
+              } else if (entry.entityType === 'topics') {
+                if (!activeTopic || (parsed.updatedAt || 0) >= (activeTopic.updatedAt || 0)) {
+                  activeTopic = parsed;
+                }
+              }
+            } catch (_) {}
+          }
+
+          const extStatements: any[] = [];
+
+          if (!activeCourse) {
+            activeCourse = {
+              id: `course-ext-${now}`,
+              name: 'Meus Estudos',
+              color: '#6366f1',
+              createdAt: now,
+              updatedAt: now,
+            };
+            extStatements.push(
+              env.DB.prepare(
+                'INSERT OR REPLACE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
+              ).bind(userId, activeCourse.id, 'courses', JSON.stringify(activeCourse), now)
+            );
+          }
+
+          if (!activeSubject) {
+            activeSubject = {
+              id: `subj-ext-${now + 1}`,
+              courseId: activeCourse.id,
+              name: 'Aulas & Gravações',
+              color: '#6366f1',
+              icon: 'BookOpen',
+              createdAt: now + 1,
+              updatedAt: now + 1,
+            };
+            extStatements.push(
+              env.DB.prepare(
+                'INSERT OR REPLACE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
+              ).bind(userId, activeSubject.id, 'subjects', JSON.stringify(activeSubject), now + 1)
+            );
+          }
+
+          if (!activeTopic) {
+            activeTopic = {
+              id: `topic-ext-${now + 2}`,
+              courseId: activeSubject.courseId || activeCourse.id,
+              subjectId: activeSubject.id,
+              title: 'Gravações da Extensão',
+              date: new Date(now).toISOString().slice(0, 10),
+              startTime: new Date(now).toLocaleTimeString('pt-BR'),
+              studyDurationSeconds: 0,
+              createdAt: now + 2,
+              updatedAt: now + 2,
+            };
+            extStatements.push(
+              env.DB.prepare(
+                'INSERT OR REPLACE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
+              ).bind(userId, activeTopic.id, 'topics', JSON.stringify(activeTopic), now + 2)
+            );
+          }
+
+          const isAudio = clientData.captureType === 'audio';
+          const itemId =
+            clientData.itemId ||
+            `${isAudio ? 'rec' : 'print'}-${now}-${Math.random().toString(36).slice(2, 7)}`;
+          const rawDataUrl: string = clientData.dataUrl;
+          let storedMediaField = rawDataUrl;
+
+          if (rawDataUrl.length > 20000) {
+            await saveMediaChunks(env, userId, itemId, rawDataUrl, now);
+            storedMediaField = EXTERNAL_MEDIA_MARKER;
+          }
+
+          const dateObj = new Date(now);
+          const newItem: any = {
+            id: itemId,
+            topicId: activeTopic.id,
+            subjectId: activeTopic.subjectId || activeSubject.id,
+            courseId: activeTopic.courseId || activeSubject.courseId || activeCourse.id,
+            type: isAudio ? 'audio' : 'photo',
+            createdAt: now,
+            updatedAt: now,
+            timeLabel: dateObj.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            }),
+            dateLabel: dateObj.toLocaleDateString('pt-BR'),
+            orderIndex: now,
+            title:
+              clientData.pageTitle
+                ? `${isAudio ? 'Áudio' : 'Print'}: ${String(clientData.pageTitle).slice(0, 50)}`
+                : isAudio
+                ? 'Gravação da Extensão'
+                : 'Print da Extensão',
+            content: '',
+            transcript: clientData.transcript || undefined,
+            importantForExam: false,
+            mediaDataUrl: storedMediaField,
+            audioDurationSeconds: isAudio ? Math.max(1, Number(clientData.duration) || 10) : undefined,
+            audioWaveform: isAudio
+              ? Array.from({ length: 28 }, () => Number((0.3 + Math.random() * 0.55).toFixed(2)))
+              : undefined,
+            syncStatus: 'synced',
+          };
+
+          extStatements.push(
+            env.DB.prepare(
+              'INSERT OR REPLACE INTO sync_entities (userId, entityId, entityType, data, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, NULL)'
+            ).bind(userId, itemId, 'items', JSON.stringify(newItem), now + 3)
+          );
+
+          for (const st of extStatements) {
+            await st.run();
+          }
+
+          return jsonResponse({
+            success: true,
+            itemId,
+            topicTitle: activeTopic.title,
+            lastSyncedAt: now + 3,
+          });
+        }
+
         const clientDeletedIds: string[] = Array.isArray(clientData.deletedIds)
           ? clientData.deletedIds
           : [];
