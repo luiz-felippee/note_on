@@ -4,11 +4,11 @@ export function getRedisConfig() {
   const url =
     process.env.KV_REST_API_URL ||
     process.env.UPSTASH_REDIS_REST_URL ||
-    '';
+    'https://precise-sheep-187228.upstash.io';
   const token =
     process.env.KV_REST_API_TOKEN ||
     process.env.UPSTASH_REDIS_REST_TOKEN ||
-    '';
+    'gQAAAAAAAttcAQIgcDFlMzdmODMzM2ZiY2U0ODU5OGMwODU4ZTQ4YmI3ODY1Yg';
 
   return {
     url: url.replace(/\/$/, ''),
@@ -73,3 +73,4 @@ export async function redisSet(
 export async function redisDel(key: string): Promise<number> {
   return await redisCommand(['DEL', key]);
 }
+

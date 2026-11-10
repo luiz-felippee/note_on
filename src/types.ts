@@ -111,12 +111,3 @@ export interface StudyQuestion {
   createdAt: number;
   importantForExam?: boolean;
 }
-
-export interface FirebaseConfigData {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  appId: string;
-}

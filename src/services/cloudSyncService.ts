@@ -116,3 +116,4 @@ export async function syncWithCloud(localData: SyncPayload): Promise<{
 
   return json;
 }
+

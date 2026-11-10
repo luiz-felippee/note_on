@@ -1,37 +1,8 @@
 import { openDB, IDBPDatabase } from 'idb';
-import { initializeApp, FirebaseApp, getApps } from 'firebase/app';
-import {
-  getAuth,
-  Auth,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  User,
-} from 'firebase/auth';
-import {
-  getFirestore,
-  Firestore,
-  collection,
-  doc,
-  setDoc,
-  deleteDoc,
-  getDocs,
-} from 'firebase/firestore';
-import {
-  getStorage,
-  FirebaseStorage,
-  ref,
-  uploadString,
-  getDownloadURL,
-} from 'firebase/storage';
-import { Course, Subject, StudyTopic, TimelineItem, FirebaseConfigData, StudyQuestion } from '../types';
+import { Course, Subject, StudyTopic, TimelineItem, StudyQuestion } from '../types';
 
 const DB_NAME = 'noteon_study_db';
 const DB_VERSION = 3; // Upgraded for questions store
-const FB_CONFIG_STORAGE_KEY = 'noteon_firebase_config_v1';
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -157,109 +128,6 @@ function createDemoBoardPhotoDataUrl(): string {
     <text x="485" y="475" fill="#c4b5fd" font-family="sans-serif" font-size="15">3. Hiperpolarização (-90mV)</text>
   </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-}
-
-// Firebase state
-let firebaseApp: FirebaseApp | null = null;
-let firebaseAuth: Auth | null = null;
-let firestoreDb: Firestore | null = null;
-let firebaseStorage: FirebaseStorage | null = null;
-let currentUser: User | null = null;
-
-export function getSavedFirebaseConfig(): FirebaseConfigData | null {
-  const envKey = import.meta.env.VITE_FIREBASE_API_KEY;
-  if (envKey) {
-    return {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-      appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-    };
-  }
-  const raw = localStorage.getItem(FB_CONFIG_STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-export function saveFirebaseConfig(config: FirebaseConfigData | null) {
-  if (!config) {
-    localStorage.removeItem(FB_CONFIG_STORAGE_KEY);
-    return;
-  }
-  localStorage.setItem(FB_CONFIG_STORAGE_KEY, JSON.stringify(config));
-  initFirebaseIfConfigured();
-}
-
-export function initFirebaseIfConfigured(): {
-  configured: boolean;
-  auth: Auth | null;
-  db: Firestore | null;
-} {
-  const cfg = getSavedFirebaseConfig();
-  if (!cfg || !cfg.apiKey || !cfg.projectId) {
-    return { configured: false, auth: null, db: null };
-  }
-  try {
-    const existing = getApps();
-    firebaseApp = existing.length > 0 ? existing[0] : initializeApp(cfg);
-    firebaseAuth = getAuth(firebaseApp);
-    firestoreDb = getFirestore(firebaseApp);
-    firebaseStorage = getStorage(firebaseApp);
-    return { configured: true, auth: firebaseAuth, db: firestoreDb };
-  } catch (err) {
-    console.error('Erro ao inicializar Firebase:', err);
-    return { configured: false, auth: null, db: null };
-  }
-}
-
-export function subscribeToAuth(callback: (user: User | null) => void): () => void {
-  const { configured, auth } = initFirebaseIfConfigured();
-  if (!configured || !auth) {
-    callback(null);
-    return () => {};
-  }
-  return onAuthStateChanged(auth, (u) => {
-    currentUser = u;
-    callback(u);
-  });
-}
-
-export async function loginWithGoogle(): Promise<User> {
-  const { auth } = initFirebaseIfConfigured();
-  if (!auth) throw new Error('Firebase não configurado.');
-  const provider = new GoogleAuthProvider();
-  const res = await signInWithPopup(auth, provider);
-  currentUser = res.user;
-  await syncAllFromAndToCloud();
-  return res.user;
-}
-
-export async function loginWithEmail(
-  email: string,
-  pass: string,
-  isRegister: boolean
-): Promise<User> {
-  const { auth } = initFirebaseIfConfigured();
-  if (!auth) throw new Error('Firebase não configurado.');
-  const res = isRegister
-    ? await createUserWithEmailAndPassword(auth, email, pass)
-    : await signInWithEmailAndPassword(auth, email, pass);
-  currentUser = res.user;
-  await syncAllFromAndToCloud();
-  return res.user;
-}
-
-export async function logoutFirebase(): Promise<void> {
-  if (firebaseAuth) {
-    await signOut(firebaseAuth);
-    currentUser = null;
-  }
 }
 
 // Seed initial demo data with 3-Level hierarchy: Course -> Subject -> Topic -> Items
@@ -423,13 +291,6 @@ export async function getAllCourses(): Promise<Course[]> {
 export async function saveCourse(course: Course): Promise<void> {
   const db = await getLocalDB();
   await db.put('courses', course);
-  if (currentUser && firestoreDb) {
-    try {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'courses', course.id), course);
-    } catch (e) {
-      console.warn('Falha ao sincronizar curso com Firebase:', e);
-    }
-  }
 }
 
 export async function deleteCourseAndChildren(courseId: string): Promise<void> {
@@ -439,13 +300,6 @@ export async function deleteCourseAndChildren(courseId: string): Promise<void> {
     await deleteSubjectAndChildren(s.id);
   }
   await db.delete('courses', courseId);
-  if (currentUser && firestoreDb) {
-    try {
-      await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'courses', courseId));
-    } catch {
-      // ignore
-    }
-  }
 }
 
 // Subject CRUD Operations
@@ -464,16 +318,6 @@ export async function getSubjectsByCourse(courseId: string): Promise<Subject[]> 
 export async function saveSubject(subject: Subject): Promise<void> {
   const db = await getLocalDB();
   await db.put('subjects', subject);
-  if (currentUser && firestoreDb) {
-    try {
-      await setDoc(
-        doc(firestoreDb, 'users', currentUser.uid, 'subjects', subject.id),
-        subject
-      );
-    } catch (e) {
-      console.warn('Falha ao sincronizar matéria com Firebase:', e);
-    }
-  }
 }
 
 export async function deleteSubjectAndChildren(subjectId: string): Promise<void> {
@@ -483,13 +327,6 @@ export async function deleteSubjectAndChildren(subjectId: string): Promise<void>
     await deleteTopicAndItems(t.id);
   }
   await db.delete('subjects', subjectId);
-  if (currentUser && firestoreDb) {
-    try {
-      await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'subjects', subjectId));
-    } catch (e) {
-      console.warn('Erro ao deletar matéria na nuvem:', e);
-    }
-  }
 }
 
 // Topic CRUD Operations
@@ -508,13 +345,6 @@ export async function getAllTopics(): Promise<StudyTopic[]> {
 export async function saveTopic(topic: StudyTopic): Promise<void> {
   const db = await getLocalDB();
   await db.put('topics', topic);
-  if (currentUser && firestoreDb) {
-    try {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'topics', topic.id), topic);
-    } catch (e) {
-      console.warn('Falha ao sincronizar assunto com Firebase:', e);
-    }
-  }
 }
 
 export async function deleteTopicAndItems(topicId: string): Promise<void> {
@@ -522,22 +352,8 @@ export async function deleteTopicAndItems(topicId: string): Promise<void> {
   const items = await db.getAllFromIndex('items', 'by-topic', topicId);
   for (const item of items) {
     await db.delete('items', item.id);
-    if (currentUser && firestoreDb) {
-      try {
-        await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'items', item.id));
-      } catch {
-        // ignore
-      }
-    }
   }
   await db.delete('topics', topicId);
-  if (currentUser && firestoreDb) {
-    try {
-      await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'topics', topicId));
-    } catch {
-      // ignore
-    }
-  }
 }
 
 // Timeline Items CRUD Operations
@@ -560,62 +376,15 @@ export async function saveTimelineItem(item: TimelineItem): Promise<TimelineItem
   const db = await getLocalDB();
   const toSave: TimelineItem = {
     ...item,
-    syncStatus: currentUser && firestoreDb ? 'syncing' : 'local',
+    syncStatus: item.syncStatus || 'local',
   };
   await db.put('items', toSave);
-
-  if (currentUser && firestoreDb) {
-    try {
-      let cloudMediaUrl = toSave.mediaDataUrl;
-      if (
-        firebaseStorage &&
-        cloudMediaUrl &&
-        cloudMediaUrl.startsWith('data:') &&
-        cloudMediaUrl.length > 750_000
-      ) {
-        try {
-          const mediaRef = ref(
-            firebaseStorage,
-            `users/${currentUser.uid}/media/${toSave.id}`
-          );
-          await uploadString(mediaRef, cloudMediaUrl, 'data_url');
-          cloudMediaUrl = await getDownloadURL(mediaRef);
-        } catch (storageErr) {
-          console.warn('Usando fallback Firestore para mídia:', storageErr);
-        }
-      }
-
-      const syncedItem: TimelineItem = {
-        ...toSave,
-        mediaDataUrl: cloudMediaUrl,
-        syncStatus: 'synced',
-      };
-      await setDoc(
-        doc(firestoreDb, 'users', currentUser.uid, 'items', toSave.id),
-        syncedItem
-      );
-      await db.put('items', { ...toSave, syncStatus: 'synced' });
-      return { ...toSave, syncStatus: 'synced' };
-    } catch (err) {
-      console.warn('Item salvo localmente (sincronizará quando online):', err);
-      await db.put('items', { ...toSave, syncStatus: 'local' });
-      return { ...toSave, syncStatus: 'local' };
-    }
-  }
-
   return toSave;
 }
 
 export async function deleteTimelineItem(itemId: string): Promise<void> {
   const db = await getLocalDB();
   await db.delete('items', itemId);
-  if (currentUser && firestoreDb) {
-    try {
-      await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'items', itemId));
-    } catch (e) {
-      console.warn('Erro ao remover item na nuvem:', e);
-    }
-  }
 }
 
 export async function getQuestionsByTopic(topicId: string): Promise<StudyQuestion[]> {
@@ -633,13 +402,6 @@ export async function getAllQuestions(): Promise<StudyQuestion[]> {
 export async function saveQuestion(question: StudyQuestion): Promise<StudyQuestion> {
   const db = await getLocalDB();
   await db.put('questions', question);
-  if (currentUser && firestoreDb) {
-    try {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', question.id), question);
-    } catch (e) {
-      console.warn('Erro ao salvar questão na nuvem:', e);
-    }
-  }
   return question;
 }
 
@@ -650,121 +412,12 @@ export async function saveQuestionsBatch(questions: StudyQuestion[]): Promise<St
     await tx.store.put(q);
   }
   await tx.done;
-  if (currentUser && firestoreDb) {
-    for (const q of questions) {
-      try {
-        await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', q.id), q);
-      } catch (e) {
-        // continue
-      }
-    }
-  }
   return questions;
 }
 
 export async function deleteQuestion(questionId: string): Promise<void> {
   const db = await getLocalDB();
   await db.delete('questions', questionId);
-  if (currentUser && firestoreDb) {
-    try {
-      await deleteDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', questionId));
-    } catch (e) {
-      console.warn('Erro ao remover questão na nuvem:', e);
-    }
-  }
-}
-
-export async function syncAllFromAndToCloud(): Promise<{
-  pushed: number;
-  pulled: number;
-}> {
-  if (!currentUser || !firestoreDb) return { pushed: 0, pulled: 0 };
-  const db = await getLocalDB();
-  let pushed = 0;
-  let pulled = 0;
-
-  try {
-    const cloudCourseSnap = await getDocs(
-      collection(firestoreDb, 'users', currentUser.uid, 'courses')
-    );
-    for (const d of cloudCourseSnap.docs) {
-      const data = d.data() as Course;
-      await db.put('courses', data);
-      pulled++;
-    }
-
-    const cloudSubjSnap = await getDocs(
-      collection(firestoreDb, 'users', currentUser.uid, 'subjects')
-    );
-    for (const d of cloudSubjSnap.docs) {
-      const data = d.data() as Subject;
-      await db.put('subjects', data);
-      pulled++;
-    }
-
-    const cloudTopicSnap = await getDocs(
-      collection(firestoreDb, 'users', currentUser.uid, 'topics')
-    );
-    for (const d of cloudTopicSnap.docs) {
-      const data = d.data() as StudyTopic;
-      await db.put('topics', data);
-      pulled++;
-    }
-
-    const cloudItemSnap = await getDocs(
-      collection(firestoreDb, 'users', currentUser.uid, 'items')
-    );
-    for (const d of cloudItemSnap.docs) {
-      const data = d.data() as TimelineItem;
-      await db.put('items', { ...data, syncStatus: 'synced' });
-      pulled++;
-    }
-
-    const cloudQuestionSnap = await getDocs(
-      collection(firestoreDb, 'users', currentUser.uid, 'questions')
-    );
-    for (const d of cloudQuestionSnap.docs) {
-      const data = d.data() as StudyQuestion;
-      await db.put('questions', data);
-      pulled++;
-    }
-
-    const localCourses = await db.getAll('courses');
-    for (const c of localCourses) {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'courses', c.id), c);
-      pushed++;
-    }
-
-    const localSubjects = await db.getAll('subjects');
-    for (const s of localSubjects) {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'subjects', s.id), s);
-      pushed++;
-    }
-
-    const localTopics = await db.getAll('topics');
-    for (const t of localTopics) {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'topics', t.id), t);
-      pushed++;
-    }
-
-    const localItems: TimelineItem[] = await db.getAll('items');
-    for (const item of localItems) {
-      if (item.syncStatus !== 'synced') {
-        await saveTimelineItem(item);
-        pushed++;
-      }
-    }
-
-    const localQuestions: StudyQuestion[] = await db.getAll('questions');
-    for (const q of localQuestions) {
-      await setDoc(doc(firestoreDb, 'users', currentUser.uid, 'questions', q.id), q);
-      pushed++;
-    }
-  } catch (err) {
-    console.warn('Erro durante sincronização completa:', err);
-  }
-
-  return { pushed, pulled };
 }
 
 // 1-Click Full Backup Export & Import (.json)

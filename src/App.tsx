@@ -38,7 +38,6 @@ import {
   Puzzle,
   CheckCircle2,
 } from 'lucide-react';
-import { User } from 'firebase/auth';
 import {
   Course,
   Subject,
@@ -71,7 +70,6 @@ import {
   saveQuestion,
   saveQuestionsBatch,
   deleteQuestion,
-  subscribeToAuth,
   exportFullBackupJson,
   importFullBackupJson,
   saveMergedCloudData,
@@ -79,7 +77,6 @@ import {
 import { AudioPlayerCard } from './components/AudioPlayerCard';
 import { PhotoViewerModal } from './components/PhotoViewerModal';
 import { CameraModal } from './components/CameraModal';
-import { FirebaseCloudModal } from './components/FirebaseCloudModal';
 import { ExamFlashcardsModal } from './components/ExamFlashcardsModal';
 import { BoardCarouselModal } from './components/BoardCarouselModal';
 import { TopicQuestionsView } from './components/TopicQuestionsView';
@@ -187,8 +184,6 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [toastInfo]);
-
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
 
   // NoteOn Cloud Sync States (Vercel Serverless + Upstash Redis)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(getCloudUser());
@@ -367,8 +362,6 @@ export default function App() {
 
   useEffect(() => {
     reloadAllData();
-    const unsub = subscribeToAuth((u) => setFirebaseUser(u));
-    return () => unsub();
   }, []);
 
   // Update selected Subject when Course changes
