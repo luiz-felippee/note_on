@@ -112,13 +112,20 @@ export interface StudyQuestion {
   importantForExam?: boolean;
 }
 
-export type AiProviderName = 'gemini' | 'groq' | 'openrouter' | 'openai' | 'local';
+export type AiProviderName = 'nvidia' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'local';
 
 export interface AiProviderConfig {
+  nvidiaApiKey?: string;
+  nvidiaModel?: string;
   geminiApiKey?: string;
+  geminiModel?: string;
   groqApiKey?: string;
+  groqModel?: string;
   openRouterApiKey?: string;
+  openRouterModel?: string;
   openAiApiKey?: string;
+  openAiModel?: string;
+  activeProviderSelection?: 'auto' | AiProviderName;
   preferredOrder?: AiProviderName[];
 }
 

@@ -10,18 +10,66 @@ import {
 } from '../types';
 
 // Storage keys
+const KEY_NVIDIA = 'noteon_nvidia_api_key';
+const KEY_NVIDIA_MODEL = 'noteon_nvidia_model';
 const KEY_GEMINI = 'noteon_gemini_api_key';
+const KEY_GEMINI_MODEL = 'noteon_gemini_model';
 const KEY_GROQ = 'noteon_groq_api_key';
+const KEY_GROQ_MODEL = 'noteon_groq_model';
 const KEY_OPENROUTER = 'noteon_openrouter_api_key';
+const KEY_OPENROUTER_MODEL = 'noteon_openrouter_model';
 const KEY_OPENAI = 'noteon_openai_api_key';
+const KEY_OPENAI_MODEL = 'noteon_openai_model';
+const KEY_ACTIVE_SELECTION = 'noteon_active_provider_selection';
+
+export const AVAILABLE_MODELS = {
+  nvidia: [
+    { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B Instruct (Recomendado)', desc: 'Excelente raciocínio e síntese' },
+    { id: 'deepseek-ai/deepseek-r1', name: 'DeepSeek R1 (Raciocínio Lógico)', desc: 'Raciocínio profundo com cadeia de pensamento' },
+    { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'NVIDIA Nemotron 70B', desc: 'Modelo otimizado pela NVIDIA' },
+    { id: 'meta/llama-3.1-405b-instruct', name: 'Llama 3.1 405B Instruct', desc: 'Maior modelo de código aberto do mundo' },
+    { id: 'mistralai/mistral-large-2-instruct', name: 'Mistral Large 2', desc: 'Ótimo entendimento de português' },
+  ],
+  gemini: [
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Recomendado)', desc: 'Multimodal veloz com análise de imagens e lousas' },
+    { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash (Experimental)', desc: 'Nova geração ultra veloz da Google' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', desc: 'Raciocínio profundo e grande janela' },
+    { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash-8B', desc: 'Mais leve e econômico' },
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recomendado)', desc: '300+ tokens/s instantâneo' },
+    { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill 70B', desc: 'Raciocínio veloz no Groq LPU' },
+    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', desc: 'Respostas em frações de segundo' },
+    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (32k context)', desc: 'Mistura de especialistas' },
+  ],
+  openrouter: [
+    { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', desc: 'Raciocínio lógico avançado' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', desc: 'Geral de alta performance' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', desc: 'Meta open weights' },
+    { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', desc: 'Velocidade e precisão' },
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', name: 'GPT-4o mini (Recomendado)', desc: 'Rápido, equilibrado e confiável' },
+    { id: 'gpt-4o', name: 'GPT-4o (Completo)', desc: 'Modelo topo de linha' },
+    { id: 'o3-mini', name: 'o3-mini (Raciocínio STEM)', desc: 'Especialista em ciências e exatas' },
+  ],
+};
 
 export function getStoredAiKeys(): AiProviderConfig {
   try {
     return {
+      nvidiaApiKey: localStorage.getItem(KEY_NVIDIA) || '',
+      nvidiaModel: localStorage.getItem(KEY_NVIDIA_MODEL) || AVAILABLE_MODELS.nvidia[0].id,
       geminiApiKey: localStorage.getItem(KEY_GEMINI) || '',
+      geminiModel: localStorage.getItem(KEY_GEMINI_MODEL) || AVAILABLE_MODELS.gemini[0].id,
       groqApiKey: localStorage.getItem(KEY_GROQ) || '',
+      groqModel: localStorage.getItem(KEY_GROQ_MODEL) || AVAILABLE_MODELS.groq[0].id,
       openRouterApiKey: localStorage.getItem(KEY_OPENROUTER) || '',
+      openRouterModel: localStorage.getItem(KEY_OPENROUTER_MODEL) || AVAILABLE_MODELS.openrouter[0].id,
       openAiApiKey: localStorage.getItem(KEY_OPENAI) || '',
+      openAiModel: localStorage.getItem(KEY_OPENAI_MODEL) || AVAILABLE_MODELS.openai[0].id,
+      activeProviderSelection:
+        (localStorage.getItem(KEY_ACTIVE_SELECTION) as any) || 'auto',
     };
   } catch {
     return {};
@@ -30,39 +78,41 @@ export function getStoredAiKeys(): AiProviderConfig {
 
 export function saveStoredAiKeys(config: Partial<AiProviderConfig>): void {
   try {
-    if (config.geminiApiKey !== undefined) {
-      if (config.geminiApiKey.trim()) {
-        localStorage.setItem(KEY_GEMINI, config.geminiApiKey.trim());
-      } else {
-        localStorage.removeItem(KEY_GEMINI);
-      }
+    if (config.nvidiaApiKey !== undefined) {
+      if (config.nvidiaApiKey.trim()) localStorage.setItem(KEY_NVIDIA, config.nvidiaApiKey.trim());
+      else localStorage.removeItem(KEY_NVIDIA);
     }
+    if (config.nvidiaModel !== undefined) localStorage.setItem(KEY_NVIDIA_MODEL, config.nvidiaModel);
+
+    if (config.geminiApiKey !== undefined) {
+      if (config.geminiApiKey.trim()) localStorage.setItem(KEY_GEMINI, config.geminiApiKey.trim());
+      else localStorage.removeItem(KEY_GEMINI);
+    }
+    if (config.geminiModel !== undefined) localStorage.setItem(KEY_GEMINI_MODEL, config.geminiModel);
 
     if (config.groqApiKey !== undefined) {
-      if (config.groqApiKey.trim()) {
-        localStorage.setItem(KEY_GROQ, config.groqApiKey.trim());
-      } else {
-        localStorage.removeItem(KEY_GROQ);
-      }
+      if (config.groqApiKey.trim()) localStorage.setItem(KEY_GROQ, config.groqApiKey.trim());
+      else localStorage.removeItem(KEY_GROQ);
     }
+    if (config.groqModel !== undefined) localStorage.setItem(KEY_GROQ_MODEL, config.groqModel);
 
     if (config.openRouterApiKey !== undefined) {
-      if (config.openRouterApiKey.trim()) {
-        localStorage.setItem(KEY_OPENROUTER, config.openRouterApiKey.trim());
-      } else {
-        localStorage.removeItem(KEY_OPENROUTER);
-      }
+      if (config.openRouterApiKey.trim()) localStorage.setItem(KEY_OPENROUTER, config.openRouterApiKey.trim());
+      else localStorage.removeItem(KEY_OPENROUTER);
     }
+    if (config.openRouterModel !== undefined) localStorage.setItem(KEY_OPENROUTER_MODEL, config.openRouterModel);
 
     if (config.openAiApiKey !== undefined) {
-      if (config.openAiApiKey.trim()) {
-        localStorage.setItem(KEY_OPENAI, config.openAiApiKey.trim());
-      } else {
-        localStorage.removeItem(KEY_OPENAI);
-      }
+      if (config.openAiApiKey.trim()) localStorage.setItem(KEY_OPENAI, config.openAiApiKey.trim());
+      else localStorage.removeItem(KEY_OPENAI);
+    }
+    if (config.openAiModel !== undefined) localStorage.setItem(KEY_OPENAI_MODEL, config.openAiModel);
+
+    if (config.activeProviderSelection !== undefined) {
+      localStorage.setItem(KEY_ACTIVE_SELECTION, config.activeProviderSelection);
     }
   } catch (err) {
-    console.warn('Erro ao salvar chaves de IA no localStorage:', err);
+    console.warn('Erro ao salvar chaves e modelos no localStorage:', err);
   }
 }
 
@@ -74,7 +124,6 @@ export interface LessonContext {
   questions?: StudyQuestion[];
 }
 
-// Build a rich contextual prompt from the lesson
 export function buildLessonContextPrompt(ctx: LessonContext): string {
   const { subject, topic, items } = ctx;
 
@@ -138,13 +187,64 @@ export function buildLessonContextPrompt(ctx: LessonContext): string {
   return text;
 }
 
-// 1. Google Gemini API Call
+// 1. NVIDIA NIM API Call (https://integrate.api.nvidia.com)
+async function callNvidia(
+  apiKey: string,
+  model: string,
+  userMessage: string,
+  contextPrompt: string
+): Promise<string> {
+  const url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  const targetModel = model || 'meta/llama-3.3-70b-instruct';
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model: targetModel,
+      messages: [
+        {
+          role: 'system',
+          content: `${contextPrompt}\nVocê é o Tutor de Estudos NoteOn alimentado pela plataforma NVIDIA AI. Responda em português brasileiro com formatação clara em markdown (tópicos, negrito), foco didático e retenção para provas.`,
+        },
+        {
+          role: 'user',
+          content: userMessage,
+        },
+      ],
+      temperature: 0.4,
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`NVIDIA API Error (${res.status}): ${errorText}`);
+  }
+
+  const data = await res.json();
+  const reply = data.choices?.[0]?.message?.content;
+
+  if (!reply) {
+    throw new Error('NVIDIA retornou resposta vazia.');
+  }
+
+  return reply.trim();
+}
+
+// 2. Google Gemini API Call (Multimodal with images)
 async function callGemini(
   apiKey: string,
+  model: string,
   userMessage: string,
   contextPrompt: string,
   samplePhotos: TimelineItem[] = []
 ): Promise<string> {
+  const targetModel = model || 'gemini-1.5-flash';
   const systemInstruction = `${contextPrompt}\nResponda em português brasileiro com clareza, formatação didática com markdown (tópicos, negrito), foco no aprendizado e retenção para provas.`;
 
   const parts: any[] = [{ text: systemInstruction }, { text: `Pergunta/Solicitação do aluno:\n${userMessage}` }];
@@ -156,7 +256,6 @@ async function callGemini(
       if (commaIdx !== -1) {
         const mime = photo.mediaDataUrl.slice(5, photo.mediaDataUrl.indexOf(';'));
         const base64Data = photo.mediaDataUrl.slice(commaIdx + 1);
-        // Only include if size is reasonable (< 3MB base64)
         if (base64Data.length < 4_000_000) {
           parts.push({
             inlineData: {
@@ -169,7 +268,7 @@ async function callGemini(
     }
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -199,9 +298,15 @@ async function callGemini(
   return responseText.trim();
 }
 
-// 2. Groq API Call (Ultra-fast Llama 3.3 70B)
-async function callGroq(apiKey: string, userMessage: string, contextPrompt: string): Promise<string> {
+// 3. Groq API Call (Ultra-fast)
+async function callGroq(
+  apiKey: string,
+  model: string,
+  userMessage: string,
+  contextPrompt: string
+): Promise<string> {
   const url = 'https://api.groq.com/openai/v1/chat/completions';
+  const targetModel = model || 'llama-3.3-70b-versatile';
 
   const res = await fetch(url, {
     method: 'POST',
@@ -210,7 +315,7 @@ async function callGroq(apiKey: string, userMessage: string, contextPrompt: stri
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: targetModel,
       messages: [
         {
           role: 'system',
@@ -241,9 +346,10 @@ async function callGroq(apiKey: string, userMessage: string, contextPrompt: stri
   return reply.trim();
 }
 
-// 3. OpenRouter / OpenAI API Call (DeepSeek V3 / GPT-4o mini)
+// 4. OpenRouter / OpenAI API Call
 async function callOpenRouterOrOpenAi(
   apiKey: string,
+  model: string,
   userMessage: string,
   contextPrompt: string,
   isOpenAi = false
@@ -252,7 +358,7 @@ async function callOpenRouterOrOpenAi(
     ? 'https://api.openai.com/v1/chat/completions'
     : 'https://openrouter.ai/api/v1/chat/completions';
 
-  const model = isOpenAi ? 'gpt-4o-mini' : 'deepseek/deepseek-chat';
+  const targetModel = model || (isOpenAi ? 'gpt-4o-mini' : 'deepseek/deepseek-r1');
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
@@ -268,7 +374,7 @@ async function callOpenRouterOrOpenAi(
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model,
+      model: targetModel,
       messages: [
         {
           role: 'system',
@@ -299,7 +405,7 @@ async function callOpenRouterOrOpenAi(
   return reply.trim();
 }
 
-// 4. Fallback Local Engine (Pedagogical Linguistic Synthesizer)
+// 5. Fallback Local Engine (Offline)
 function generateLocalStudyAssistantReply(
   userMessage: string,
   ctx: LessonContext
@@ -377,7 +483,6 @@ function generateLocalStudyAssistantReply(
     return summary;
   }
 
-  // Default pedagogical assistance
   return (
     `Com base nas anotações e áudios da aula **"${topic.title}"**, aqui estão os pontos principais:\n\n` +
     `• Foram identificados **${audios.length} áudios com falas** e **${photos.length} fotos de lousa** registradas.\n` +
@@ -386,54 +491,102 @@ function generateLocalStudyAssistantReply(
   );
 }
 
-// Multi-Model Failover Orchestrator
+// Multi-Model Failover Orchestrator with NVIDIA, Gemini, Groq, OpenRouter, OpenAI
 export async function executeAiStudyRequest(params: {
   userMessage: string;
   context: LessonContext;
+  selectedProvider?: 'auto' | AiProviderName;
   onProviderSwitched?: (provider: AiProviderName, modelLabel: string) => void;
 }): Promise<{
   reply: string;
   providerUsed: string;
   usedFailover: boolean;
 }> {
-  const { userMessage, context, onProviderSwitched } = params;
+  const { userMessage, context, selectedProvider = 'auto', onProviderSwitched } = params;
   const keys = getStoredAiKeys();
   const contextPrompt = buildLessonContextPrompt(context);
 
   const samplePhotos = context.items.filter((i) => i.type === 'photo');
 
-  // Define providers to try in order of priority
-  const providerChain: Array<{
+  // Define full chain of supported providers
+  const allProviders: Array<{
     name: AiProviderName;
     label: string;
     hasKey: boolean;
     runner: () => Promise<string>;
   }> = [
     {
+      name: 'nvidia',
+      label: `NVIDIA NIM (${keys.nvidiaModel || 'Llama 3.3 70B'})`,
+      hasKey: Boolean(keys.nvidiaApiKey?.trim()),
+      runner: () =>
+        callNvidia(
+          keys.nvidiaApiKey!.trim(),
+          keys.nvidiaModel || 'meta/llama-3.3-70b-instruct',
+          userMessage,
+          contextPrompt
+        ),
+    },
+    {
       name: 'gemini',
-      label: 'Google Gemini 1.5 Flash (Multimodal)',
+      label: `Google Gemini (${keys.geminiModel || '1.5 Flash'})`,
       hasKey: Boolean(keys.geminiApiKey?.trim()),
-      runner: () => callGemini(keys.geminiApiKey!.trim(), userMessage, contextPrompt, samplePhotos),
+      runner: () =>
+        callGemini(
+          keys.geminiApiKey!.trim(),
+          keys.geminiModel || 'gemini-1.5-flash',
+          userMessage,
+          contextPrompt,
+          samplePhotos
+        ),
     },
     {
       name: 'groq',
-      label: 'Groq (Llama 3.3 70B Ultra Rápido)',
+      label: `Groq (${keys.groqModel || 'Llama 3.3 70B'})`,
       hasKey: Boolean(keys.groqApiKey?.trim()),
-      runner: () => callGroq(keys.groqApiKey!.trim(), userMessage, contextPrompt),
+      runner: () =>
+        callGroq(
+          keys.groqApiKey!.trim(),
+          keys.groqModel || 'llama-3.3-70b-versatile',
+          userMessage,
+          contextPrompt
+        ),
     },
     {
       name: 'openrouter',
-      label: 'OpenRouter (DeepSeek V3 / Multimodel)',
+      label: `OpenRouter (${keys.openRouterModel || 'DeepSeek'})`,
       hasKey: Boolean(keys.openRouterApiKey?.trim()),
-      runner: () => callOpenRouterOrOpenAi(keys.openRouterApiKey!.trim(), userMessage, contextPrompt, false),
+      runner: () =>
+        callOpenRouterOrOpenAi(
+          keys.openRouterApiKey!.trim(),
+          keys.openRouterModel || 'deepseek/deepseek-r1',
+          userMessage,
+          contextPrompt,
+          false
+        ),
     },
     {
       name: 'openai',
-      label: 'OpenAI (GPT-4o mini)',
+      label: `OpenAI (${keys.openAiModel || 'GPT-4o mini'})`,
       hasKey: Boolean(keys.openAiApiKey?.trim()),
-      runner: () => callOpenRouterOrOpenAi(keys.openAiApiKey!.trim(), userMessage, contextPrompt, true),
+      runner: () =>
+        callOpenRouterOrOpenAi(
+          keys.openAiApiKey!.trim(),
+          keys.openAiModel || 'gpt-4o-mini',
+          userMessage,
+          contextPrompt,
+          true
+        ),
     },
   ];
+
+  // If user selected a specific provider explicitly, try it first
+  let providerChain = allProviders;
+  if (selectedProvider && selectedProvider !== 'auto') {
+    const chosen = allProviders.find((p) => p.name === selectedProvider);
+    const others = allProviders.filter((p) => p.name !== selectedProvider);
+    providerChain = chosen ? [chosen, ...others] : allProviders;
+  }
 
   let attempts = 0;
   let lastError: any = null;
@@ -455,13 +608,13 @@ export async function executeAiStudyRequest(params: {
       };
     } catch (err: any) {
       lastError = err;
-      console.warn(`[NoteOn AI] Provedor ${prov.name} falhou ou limite excedido:`, err.message);
-      // Automatically fall over to next provider in chain!
+      console.warn(`[NoteOn AI] Provedor ${prov.name} (${prov.label}) falhou:`, err.message);
+      // Auto-failover: jump to next provider seamlessly!
       continue;
     }
   }
 
-  // If no API keys were configured or all active keys hit rate limit / quota
+  // Fallback to local engine if no keys configured or all providers exhausted
   const localReply = generateLocalStudyAssistantReply(userMessage, context);
 
   return {
@@ -470,4 +623,3 @@ export async function executeAiStudyRequest(params: {
     usedFailover: attempts > 0,
   };
 }
-
