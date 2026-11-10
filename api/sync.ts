@@ -1,10 +1,97 @@
-import { redisGet, redisSet, getRedisConfig } from './_redis';
-import { verifySessionToken } from './_auth';
+import crypto from 'node:crypto';
 
-type VercelRequest = any;
-type VercelResponse = any;
+// Upstash Redis REST Config & Runner
+const REDIS_URL =
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  'https://precise-sheep-187228.upstash.io';
+const REDIS_TOKEN =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  'gQAAAAAAAttcAQIgcDFlMzdmODMzM2ZiY2U0ODU5OGMwODU4ZTQ4YmI3ODY1Yg';
 
-// Helper to merge two lists by ID keeping the newest version
+async function redisCommand(command: string[]): Promise<any> {
+  const url = REDIS_URL.replace(/\/$/, '');
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${REDIS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(command),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Upstash Redis Error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.result;
+}
+
+async function redisGet<T = any>(key: string): Promise<T | null> {
+  const result = await redisCommand(['GET', key]);
+  if (!result) return null;
+  if (typeof result === 'string') {
+    try {
+      return JSON.parse(result);
+    } catch {
+      return result as unknown as T;
+    }
+  }
+  return result;
+}
+
+async function redisSet(key: string, value: any): Promise<string> {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  return await redisCommand(['SET', key, serialized]);
+}
+
+// Session Token Verification
+const AUTH_SECRET = process.env.NOTEON_AUTH_SECRET || 'noteon_super_secret_salt_2026';
+
+interface SessionPayload {
+  userId: string;
+  email: string;
+  exp: number;
+}
+
+function verifySessionToken(token: string): SessionPayload | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    const [encodedPayload, signature] = parts;
+
+    const expectedSignature = crypto
+      .createHmac('sha256', AUTH_SECRET)
+      .update(encodedPayload)
+      .digest('base64url');
+
+    if (
+      !crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+      )
+    ) {
+      return null;
+    }
+
+    const payload: SessionPayload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf-8')
+    );
+
+    if (payload.exp < Date.now()) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// Merge entity lists keeping the latest version
 function mergeEntityLists<T extends { id: string; updatedAt?: number; createdAt?: number }>(
   serverList: T[] = [],
   clientList: T[] = []
@@ -32,8 +119,7 @@ function mergeEntityLists<T extends { id: string; updatedAt?: number; createdAt?
   return Array.from(map.values());
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS headers
+export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -42,21 +128,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  const { isConfigured } = getRedisConfig();
-  if (!isConfigured) {
-    return res.status(503).json({
-      error: 'REDIS_NOT_CONFIGURED',
-      message:
-        'O banco de dados Upstash / Vercel KV ainda não foi vinculado na Vercel. Acesse a aba Storage no painel da Vercel e adicione o KV em 1 clique.',
-    });
-  }
-
-  const authHeader = req.headers.authorization || '';
+  const authHeader = req.headers?.authorization || '';
   const token = authHeader.replace(/^Bearer\s+/, '').trim();
   const session = verifySessionToken(token);
 
   if (!session) {
-    return res.status(401).json({ error: 'Não autorizado. Faça login novamente.' });
+    return res.status(401).json({ error: 'Sessão não autorizada ou expirada. Faça login novamente.' });
   }
 
   const userVaultKey = `noteon:userdata:${session.userId}`;
@@ -65,16 +142,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // GET: Pull cloud data
     if (req.method === 'GET') {
       const cloudData = await redisGet(userVaultKey);
-      return res.status(200).json(
-        cloudData || {
+      return res.status(200).json({
+        success: true,
+        data: cloudData || {
           courses: [],
           subjects: [],
           topics: [],
           items: [],
           questions: [],
           lastSyncedAt: Date.now(),
-        }
-      );
+        },
+      });
     }
 
     // POST: Push local data & merge
@@ -115,7 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     console.error('Erro em /api/sync:', err);
     return res.status(500).json({
-      error: 'Erro interno ao sincronizar dados',
+      error: 'Erro interno ao sincronizar dados na nuvem',
       message: err.message,
     });
   }

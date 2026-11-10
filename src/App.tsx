@@ -189,9 +189,11 @@ export default function App() {
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(getCloudUser());
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
+  const isInitialLoadedRef = useRef(false);
+  const autoSyncTimeoutRef = useRef<any>(null);
 
-  const handlePerformCloudSync = async () => {
-    if (!cloudUser) return;
+  const handlePerformCloudSync = async (silent = false) => {
+    if (!cloudUser || !isInitialLoadedRef.current) return;
     setIsSyncingCloud(true);
     try {
       const res = await syncWithCloud({
@@ -210,7 +212,9 @@ export default function App() {
         setAllItems(res.data.items || []);
         setAllQuestions(res.data.questions || []);
         setLastSyncedTime(Date.now());
-        showToast('☁️ NoteOn sincronizado com a nuvem!');
+        if (!silent) {
+          showToast('☁️ NoteOn sincronizado com a nuvem!');
+        }
       }
     } catch (err: any) {
       console.warn('Erro ao sincronizar com a nuvem:', err);
@@ -219,17 +223,46 @@ export default function App() {
     }
   };
 
+  // Automatic Background Sync (Debounce de 1.8s a cada alteração feita no PC ou celular)
   useEffect(() => {
-    if (cloudUser) {
-      handlePerformCloudSync();
+    if (!cloudUser || !isInitialLoadedRef.current) return;
+
+    if (autoSyncTimeoutRef.current) {
+      clearTimeout(autoSyncTimeoutRef.current);
     }
-    const onFocus = () => {
-      if (cloudUser) {
-        handlePerformCloudSync();
+
+    autoSyncTimeoutRef.current = setTimeout(() => {
+      handlePerformCloudSync(true);
+    }, 1800);
+
+    return () => {
+      if (autoSyncTimeoutRef.current) {
+        clearTimeout(autoSyncTimeoutRef.current);
       }
     };
+  }, [courses, subjects, topics, allItems, allQuestions, cloudUser]);
+
+  // Sincroniza ao abrir/focar a janela ou desbloquear o celular
+  useEffect(() => {
+    const onFocus = () => {
+      if (cloudUser && isInitialLoadedRef.current) {
+        handlePerformCloudSync(true);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && cloudUser && isInitialLoadedRef.current) {
+        handlePerformCloudSync(true);
+      }
+    };
+
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [cloudUser]);
 
   // Custom In-App Confirmation Modal (Replaces browser confirm() dialog)
@@ -358,6 +391,33 @@ export default function App() {
     setSelectedCourseId((prev) =>
       prev && crs.some((c) => c.id === prev) ? prev : crs[0]?.id || null
     );
+
+    isInitialLoadedRef.current = true;
+
+    // Sincronização inicial com a nuvem ao carregar a página
+    if (cloudUser) {
+      try {
+        const res = await syncWithCloud({
+          courses: crs,
+          subjects: subjs,
+          topics: tps,
+          items: itms,
+          questions: qsts,
+        });
+
+        if (res && res.data) {
+          await saveMergedCloudData(res.data);
+          setCourses(res.data.courses || []);
+          setSubjects(res.data.subjects || []);
+          setTopics(res.data.topics || []);
+          setAllItems(res.data.items || []);
+          setAllQuestions(res.data.questions || []);
+          setLastSyncedTime(Date.now());
+        }
+      } catch (err: any) {
+        console.warn('Falha no sync inicial com nuvem:', err);
+      }
+    }
   };
 
   useEffect(() => {
@@ -625,6 +685,9 @@ export default function App() {
 
   const addTimelineEntry = async (params: {
     idOverride?: string;
+    topicIdOverride?: string;
+    subjectIdOverride?: string;
+    courseIdOverride?: string;
     type: TimelineItemType;
     title?: string;
     content: string;
@@ -634,7 +697,15 @@ export default function App() {
     audioWaveform?: number[];
     customTimestampMs?: number;
   }) => {
-    if (!selectedSubjectId || !selectedTopicId) return;
+    const targetTopicId = params.topicIdOverride || selectedTopicId;
+    const targetSubjectId = params.subjectIdOverride || selectedSubjectId;
+    if (!targetSubjectId || !targetTopicId) return;
+
+    const targetCourseId =
+      params.courseIdOverride ||
+      selectedCourseId ||
+      subjects.find((s) => s.id === targetSubjectId)?.courseId ||
+      undefined;
 
     const nowMs = params.customTimestampMs || Date.now();
     const dateObj = new Date(nowMs);
@@ -645,7 +716,8 @@ export default function App() {
     });
     const dateLabel = dateObj.toLocaleDateString('pt-BR');
 
-    const maxOrder = currentTopicItems.reduce(
+    const topicItems = allItems.filter((it) => it.topicId === targetTopicId);
+    const maxOrder = topicItems.reduce(
       (max, it) => Math.max(max, it.orderIndex || 0),
       0
     );
@@ -669,9 +741,9 @@ export default function App() {
       id:
         params.idOverride ||
         `item-${nowMs}-${Math.random().toString(36).slice(2, 7)}`,
-      topicId: selectedTopicId,
-      subjectId: selectedSubjectId,
-      courseId: selectedCourseId || undefined,
+      topicId: targetTopicId,
+      subjectId: targetSubjectId,
+      courseId: targetCourseId,
       type: params.type,
       createdAt: nowMs,
       timeLabel,
@@ -795,9 +867,19 @@ export default function App() {
         setIsExtensionDetected(true);
       } else if (event.data.type === 'SCREENSHOT_CAPTURED' && event.data.dataUrl) {
         setIsExtensionDetected(true);
-        if (!selectedTopicId || !selectedSubjectId) {
-          showToast('Selecione uma aula no NoteOn para salvar o print.', 'info');
-          return;
+        let targetTopicId = selectedTopicId;
+        let targetSubjectId = selectedSubjectId;
+
+        if (!targetTopicId || !targetSubjectId) {
+          if (topics.length > 0) {
+            targetTopicId = topics[0].id;
+            targetSubjectId = topics[0].subjectId;
+            setSelectedTopicId(targetTopicId);
+            setSelectedSubjectId(targetSubjectId);
+          } else {
+            showToast('Crie ou selecione uma matéria e aula para salvar prints do plugin.', 'info');
+            return;
+          }
         }
 
         const titleText = event.data.pageTitle
@@ -805,6 +887,8 @@ export default function App() {
           : 'Print do Slide (Plugin)';
 
         await addTimelineEntry({
+          topicIdOverride: targetTopicId,
+          subjectIdOverride: targetSubjectId,
           type: 'photo',
           title: titleText,
           content: '',
@@ -838,7 +922,7 @@ export default function App() {
       window.removeEventListener('message', handleExtensionMessage);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedTopicId, selectedSubjectId, isRecording, recordingSeconds, screenStream]);
+  }, [selectedTopicId, selectedSubjectId, topics, isRecording, recordingSeconds, screenStream]);
 
   const handleAddTextNote = async (e: React.FormEvent) => {
     e.preventDefault();

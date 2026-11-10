@@ -47,6 +47,24 @@ export function clearCloudSession(): void {
   }
 }
 
+async function parseResponseJson(res: Response, fallbackMsg: string) {
+  const text = await res.text();
+  let json: any = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(
+      res.status === 404
+        ? 'Serviço de nuvem temporariamente indisponível. Aguarde alguns segundos e tente novamente.'
+        : `Erro de comunicação com o servidor (${res.status}): ${text.slice(0, 100)}`
+    );
+  }
+  if (!res.ok) {
+    throw new Error(json?.error || json?.message || fallbackMsg);
+  }
+  return json;
+}
+
 export async function cloudRegister(email: string, password: string): Promise<CloudUser> {
   const res = await fetch('/api/auth?action=register', {
     method: 'POST',
@@ -54,11 +72,7 @@ export async function cloudRegister(email: string, password: string): Promise<Cl
     body: JSON.stringify({ action: 'register', email, password }),
   });
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || data.message || 'Falha ao criar conta.');
-  }
-
+  const data = await parseResponseJson(res, 'Falha ao criar conta.');
   saveCloudSession(data.user, data.token);
   return data.user;
 }
@@ -70,11 +84,7 @@ export async function cloudLogin(email: string, password: string): Promise<Cloud
     body: JSON.stringify({ action: 'login', email, password }),
   });
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || data.message || 'Falha no login.');
-  }
-
+  const data = await parseResponseJson(res, 'Falha no login.');
   saveCloudSession(data.user, data.token);
   return data.user;
 }
@@ -109,11 +119,6 @@ export async function syncWithCloud(localData: SyncPayload): Promise<{
     body: JSON.stringify(localData),
   });
 
-  const json = await res.json();
-  if (!res.ok) {
-    throw new Error(json.error || json.message || 'Falha na sincronização.');
-  }
-
-  return json;
+  return await parseResponseJson(res, 'Falha na sincronização.');
 }
 
