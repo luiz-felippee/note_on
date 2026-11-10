@@ -825,3 +825,28 @@ export async function importFullBackupJson(jsonContent: string): Promise<{
     questions: (parsed.questions || []).length,
   };
 }
+
+export async function saveMergedCloudData(data: {
+  courses?: Course[];
+  subjects?: Subject[];
+  topics?: StudyTopic[];
+  items?: TimelineItem[];
+  questions?: StudyQuestion[];
+}): Promise<void> {
+  const db = await getLocalDB();
+  for (const c of data.courses || []) {
+    await db.put('courses', c);
+  }
+  for (const s of data.subjects || []) {
+    await db.put('subjects', s);
+  }
+  for (const t of data.topics || []) {
+    await db.put('topics', t);
+  }
+  for (const i of data.items || []) {
+    await db.put('items', i);
+  }
+  for (const q of data.questions || []) {
+    await db.put('questions', q);
+  }
+}

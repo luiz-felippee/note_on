@@ -74,6 +74,7 @@ import {
   subscribeToAuth,
   exportFullBackupJson,
   importFullBackupJson,
+  saveMergedCloudData,
 } from './services/storageService';
 import { AudioPlayerCard } from './components/AudioPlayerCard';
 import { PhotoViewerModal } from './components/PhotoViewerModal';
@@ -83,7 +84,13 @@ import { ExamFlashcardsModal } from './components/ExamFlashcardsModal';
 import { BoardCarouselModal } from './components/BoardCarouselModal';
 import { TopicQuestionsView } from './components/TopicQuestionsView';
 import { ExtensionPluginModal } from './components/ExtensionPluginModal';
+import { CloudSyncModal } from './components/CloudSyncModal';
 import { generateQuestionsFromTranscript } from './services/questionGeneratorService';
+import {
+  getCloudUser,
+  syncWithCloud,
+  CloudUser,
+} from './services/cloudSyncService';
 
 const SUBJECT_COLORS = [
   '#6366f1', // Indigo
@@ -182,6 +189,53 @@ export default function App() {
   }, [toastInfo]);
 
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+
+  // NoteOn Cloud Sync States (Vercel Serverless + Upstash Redis)
+  const [cloudUser, setCloudUser] = useState<CloudUser | null>(getCloudUser());
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
+
+  const handlePerformCloudSync = async () => {
+    if (!cloudUser) return;
+    setIsSyncingCloud(true);
+    try {
+      const res = await syncWithCloud({
+        courses,
+        subjects,
+        topics,
+        items: allItems,
+        questions: allQuestions,
+      });
+
+      if (res && res.data) {
+        await saveMergedCloudData(res.data);
+        setCourses(res.data.courses || []);
+        setSubjects(res.data.subjects || []);
+        setTopics(res.data.topics || []);
+        setAllItems(res.data.items || []);
+        setAllQuestions(res.data.questions || []);
+        setLastSyncedTime(Date.now());
+        showToast('☁️ NoteOn sincronizado com a nuvem!');
+      }
+    } catch (err: any) {
+      console.warn('Erro ao sincronizar com a nuvem:', err);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  useEffect(() => {
+    if (cloudUser) {
+      handlePerformCloudSync();
+    }
+    const onFocus = () => {
+      if (cloudUser) {
+        handlePerformCloudSync();
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [cloudUser]);
 
   // Custom In-App Confirmation Modal (Replaces browser confirm() dialog)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -1444,9 +1498,19 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowCloudModal(true)}
-            className="p-2 rounded-lg bg-slate-800 text-slate-300 cursor-pointer"
+            className={`p-2 rounded-lg cursor-pointer flex items-center gap-1.5 transition ${
+              cloudUser
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                : 'bg-slate-800 text-slate-300 hover:text-white'
+            }`}
+            title={
+              cloudUser
+                ? `Nuvem Conectada (${cloudUser.email}) - Clique para sincronizar`
+                : 'Sincronizar Celular e PC (NoteOn Cloud)'
+            }
           >
-            <Cloud className="w-4 h-4" />
+            <Cloud className={`w-4 h-4 ${isSyncingCloud ? 'animate-spin text-cyan-300' : ''}`} />
+            {cloudUser && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
           </button>
         </div>
       </header>
@@ -1846,8 +1910,8 @@ export default function App() {
             type="button"
             onClick={() => setShowCloudModal(true)}
             className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition cursor-pointer ${
-              firebaseUser
-                ? 'bg-emerald-500/10 text-emerald-300'
+              cloudUser
+                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
                 : lightMode
                 ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 : 'bg-slate-800/60 text-slate-300 hover:bg-slate-800'
@@ -1856,10 +1920,10 @@ export default function App() {
             <span className="flex items-center gap-2 truncate">
               <Cloud className="w-4 h-4 text-indigo-400 shrink-0" />
               <span className="truncate">
-                {firebaseUser ? firebaseUser.email : 'Nuvem Firebase'}
+                {cloudUser ? cloudUser.email : 'Sincronizar Celular / PC'}
               </span>
             </span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            {cloudUser && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse" />}
           </button>
         </div>
       </aside>
@@ -3139,10 +3203,20 @@ export default function App() {
       )}
 
       {showCloudModal && (
-        <FirebaseCloudModal
-          user={firebaseUser}
+        <CloudSyncModal
+          isOpen={showCloudModal}
           onClose={() => setShowCloudModal(false)}
-          onSynced={reloadAllData}
+          lightMode={lightMode}
+          currentUser={cloudUser}
+          isSyncing={isSyncingCloud}
+          lastSyncedTime={lastSyncedTime}
+          onPerformSync={handlePerformCloudSync}
+          onUserChanged={(u) => {
+            setCloudUser(u);
+            if (u) {
+              handlePerformCloudSync();
+            }
+          }}
         />
       )}
 
