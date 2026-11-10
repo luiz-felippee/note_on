@@ -241,23 +241,31 @@
       <div id="noteon-transcript-preview" style="display: none; font-size: 10px; color: #94a3b8; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 3px 6px; background: rgba(30, 41, 59, 0.5); border-radius: 6px;"></div>
 
       <!-- Action buttons row -->
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px;">
-        <button id="noteon-btn-pause" style="background: #1e293b; color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 7px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s ease;">
-          <span>⏸️ Pausar</span>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px;">
+        <button id="noteon-btn-snip" title="Marcar e recortar a área exata do slide (Alt + S)" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #ffffff; border: none; padding: 7px 11px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35); transition: all 0.15s ease;">
+          <span>📐</span>
+          <span>Marcar Área</span>
         </button>
 
-        <button id="noteon-btn-stop" style="flex: 1; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff; border: none; padding: 8px 14px; border-radius: 12px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4); transition: all 0.15s ease;">
-          <span style="font-size: 13px;">⏹️</span>
-          <span>Parar e Salvar no NoteOn</span>
+        <button id="noteon-btn-pause" style="background: #1e293b; color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 7px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
+          <span>⏸️</span>
+        </button>
+
+        <button id="noteon-btn-stop" style="flex: 1; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff; border: none; padding: 7px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4); transition: all 0.15s ease;">
+          <span style="font-size: 12px;">⏹️</span>
+          <span>Parar e Salvar</span>
         </button>
       </div>
 
       <!-- Mini Pill Mode (Initially hidden) -->
-      <div id="noteon-mini-pill" style="display: none; align-items: center; gap: 8px;">
+      <div id="noteon-mini-pill" style="display: none; align-items: center; gap: 6px;">
         <div style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444; animation: noteon-red-pulse 1.6s infinite;"></div>
-        <span style="font-size: 12px; font-weight: bold;">Gravando:</span>
         <span id="noteon-mini-timer" style="font-size: 12px; font-family: monospace; font-weight: bold; color: #818cf8;">00:00</span>
-        <button id="noteon-btn-stop-mini" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⏹️ Parar</button>
+        <button id="noteon-btn-snip-mini" title="Marcar área do slide (Alt + S)" style="background: #4f46e5; color: white; border: none; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+          <span>📐</span>
+          <span>Print</span>
+        </button>
+        <button id="noteon-btn-stop-mini" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⏹️ Parar</button>
         <button id="noteon-btn-expand" title="Expandir painel" style="background: transparent; color: #94a3b8; border: none; font-size: 12px; cursor: pointer; padding: 2px;">⤢</button>
       </div>
     `;
@@ -277,6 +285,30 @@
     container.querySelector('#noteon-btn-stop-mini').addEventListener('click', (e) => {
       e.stopPropagation();
       handleStop();
+    });
+
+    // Event: Trigger Area Selection Print (Snipper)
+    const triggerAreaSnip = () => {
+      // Temporarily hide floating recorder during crop selection
+      container.style.opacity = '0';
+      container.style.pointerEvents = 'none';
+
+      chrome.runtime.sendMessage({ action: 'TRIGGER_SNIP_AREA' }, () => {
+        setTimeout(() => {
+          container.style.opacity = '1';
+          container.style.pointerEvents = 'auto';
+        }, 500);
+      });
+    };
+
+    container.querySelector('#noteon-btn-snip').addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerAreaSnip();
+    });
+
+    container.querySelector('#noteon-btn-snip-mini').addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerAreaSnip();
     });
 
     // Event: Pause / Resume
@@ -472,3 +504,4 @@
     if (container) container.remove();
   }
 })();
+

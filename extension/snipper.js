@@ -161,11 +161,15 @@
 
   // Crop image and send to NoteOn
   function cropAndDeliver(rect) {
-    // Hide overlay so it's not in the screenshot
+    // Hide overlay and floating recorder so they are not captured in the screenshot
     overlay.style.display = 'none';
+    const recorder = document.getElementById('noteon-floating-audio-recorder');
+    if (recorder) recorder.style.display = 'none';
 
     setTimeout(() => {
       chrome.runtime.sendMessage({ action: 'GET_RAW_SCREENSHOT' }, (response) => {
+        if (recorder) recorder.style.display = 'flex';
+
         if (!response || !response.dataUrl) {
           cleanup();
           return;
@@ -213,7 +217,7 @@
         };
         img.src = response.dataUrl;
       });
-    }, 80);
+    }, 100);
   }
 
   // Visual success feedback on current page
