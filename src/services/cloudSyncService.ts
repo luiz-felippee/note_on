@@ -114,6 +114,18 @@ export async function cloudLogin(email: string, password: string): Promise<Cloud
   return data.user;
 }
 
+export async function cloudResetPassword(email: string, newPassword: string): Promise<CloudUser> {
+  const res = await fetch('/api/auth?action=reset_password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reset_password', email, newPassword }),
+  });
+
+  const data = await parseResponseJson(res, 'Falha ao redefinir a senha.');
+  saveCloudSession(data.user, data.token);
+  return data.user;
+}
+
 export function cloudLogout(): void {
   clearCloudSession();
 }

@@ -278,9 +278,50 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
       const expectedHash = hashPassword(password, user.salt);
       if (expectedHash !== user.passwordHash) {
-        return jsonResponse({ error: 'Senha incorreta. Verifique e tente novamente.' }, 401);
+        return jsonResponse(
+          {
+            error:
+              'Senha incorreta. Caso não lembre sua senha, clique em "Esqueci minha senha" abaixo para redefini-la.',
+          },
+          401
+        );
       }
 
+      const token = createSessionToken(canonicalUserId, cleanEmail, secret);
+
+      return jsonResponse({
+        success: true,
+        user: { userId: canonicalUserId, email: cleanEmail },
+        token,
+      });
+    }
+
+    // 3. RESET PASSWORD (Redefinir Senha mantendo todos os dados da conta)
+    if (request.method === 'POST' && action === 'reset_password') {
+      const { email, password, newPassword } = body || {};
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const targetPass = newPassword || password || '';
+
+      if (!cleanEmail || !cleanEmail.includes('@') || targetPass.length < 4) {
+        return jsonResponse(
+          { error: 'Informe seu e-mail válido e uma nova senha com pelo menos 4 caracteres.' },
+          400
+        );
+      }
+
+      const canonicalUserId = getCanonicalUserId(cleanEmail);
+      const salt = generateSalt();
+      const passwordHash = hashPassword(targetPass, salt);
+
+      const userData = {
+        userId: canonicalUserId,
+        email: cleanEmail,
+        salt,
+        passwordHash,
+        createdAt: Date.now(),
+      };
+
+      await saveStoredUser(env, userData);
       const token = createSessionToken(canonicalUserId, cleanEmail, secret);
 
       return jsonResponse({

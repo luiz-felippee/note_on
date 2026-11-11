@@ -19,6 +19,7 @@ import {
   getCloudUser,
   cloudLogin,
   cloudRegister,
+  cloudResetPassword,
   cloudLogout,
   getQuickPairingUrl,
 } from '../services/cloudSyncService';
@@ -44,7 +45,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   onPerformSync,
   onUserChanged,
 }) => {
-  const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [tab, setTab] = useState<'login' | 'register' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,6 +66,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         const user = await cloudRegister(email, password);
         onUserChanged(user);
         setSuccessMsg('Conta conectada! Sincronizando dados...');
+      } else if (tab === 'reset') {
+        const user = await cloudResetPassword(email, password);
+        onUserChanged(user);
+        setSuccessMsg('Nova senha definida com sucesso! Sincronizando seus dados...');
       } else {
         const user = await cloudLogin(email, password);
         onUserChanged(user);
@@ -283,7 +288,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               >
                 <button
                   type="button"
-                  onClick={() => setTab('login')}
+                  onClick={() => {
+                    setTab('login');
+                    setErrorMsg(null);
+                  }}
                   className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
                     tab === 'login'
                       ? 'bg-indigo-600 text-white shadow'
@@ -297,7 +305,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTab('register')}
+                  onClick={() => {
+                    setTab('register');
+                    setErrorMsg(null);
+                  }}
                   className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
                     tab === 'register'
                       ? 'bg-indigo-600 text-white shadow'
@@ -309,6 +320,23 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>Criar Conta</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('reset');
+                    setErrorMsg(null);
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                    tab === 'reset'
+                      ? 'bg-amber-600 text-white shadow'
+                      : lightMode
+                      ? 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Esqueci Senha</span>
+                </button>
               </div>
 
               <form onSubmit={handleSubmitAuth} className="space-y-3">
@@ -318,7 +346,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       lightMode ? 'text-slate-600' : 'text-slate-400'
                     }`}
                   >
-                    E-mail
+                    E-mail da Conta
                   </label>
                   <input
                     type="email"
@@ -335,20 +363,34 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </div>
 
                 <div>
-                  <label
-                    className={`block text-[11px] font-semibold uppercase tracking-wider mb-1 ${
-                      lightMode ? 'text-slate-600' : 'text-slate-400'
-                    }`}
-                  >
-                    Senha (mínimo 6 dígitos)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      className={`block text-[11px] font-semibold uppercase tracking-wider ${
+                        lightMode ? 'text-slate-600' : 'text-slate-400'
+                      }`}
+                    >
+                      {tab === 'reset' ? 'Digite sua Nova Senha (mín. 4 dígitos)' : 'Senha'}
+                    </label>
+                    {tab === 'login' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTab('reset');
+                          setErrorMsg(null);
+                        }}
+                        className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                      >
+                        Esqueci minha senha
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="password"
                     required
-                    minLength={6}
+                    minLength={4}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder={tab === 'reset' ? 'Digite a nova senha desejada' : '••••••••'}
                     className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
                       lightMode
                         ? 'bg-slate-50 border-slate-200 text-slate-800'
@@ -374,12 +416,18 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 cursor-pointer transition disabled:opacity-50"
+                  className={`w-full py-2.5 px-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2 shadow-lg cursor-pointer transition disabled:opacity-50 ${
+                    tab === 'reset'
+                      ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/25'
+                      : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/25'
+                  }`}
                 >
                   {loading ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : tab === 'register' ? (
                     <UserPlus className="w-4 h-4" />
+                  ) : tab === 'reset' ? (
+                    <RefreshCw className="w-4 h-4" />
                   ) : (
                     <LogIn className="w-4 h-4" />
                   )}
@@ -388,6 +436,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       ? 'Processando...'
                       : tab === 'register'
                       ? 'Criar Conta e Sincronizar'
+                      : tab === 'reset'
+                      ? 'Salvar Nova Senha e Entrar'
                       : 'Entrar e Sincronizar'}
                   </span>
                 </button>
