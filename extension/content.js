@@ -2,20 +2,16 @@
 
 function isNoteOnPage() {
   try {
-    const host = window.location.hostname || '';
+    const host = (window.location.hostname || '').toLowerCase();
     const title = (document.title || '').toLowerCase();
     const href = (window.location.href || '').toLowerCase();
     return (
       host === 'localhost' ||
       host === '127.0.0.1' ||
-      host.endsWith('pages.dev') ||
-      host.includes('cloudflare') ||
-      host.endsWith('vercel.app') ||
+      host.includes('note-on') ||
       host.includes('noteon') ||
-      href.includes('note_on') ||
-      title.includes('noteon') ||
-      title.includes('note on') ||
-      !!document.getElementById('root')
+      href.includes('note-on.pages.dev') ||
+      title.includes('noteon')
     );
   } catch (_) {
     return false;
@@ -24,16 +20,29 @@ function isNoteOnPage() {
 
 if (isNoteOnPage()) {
   initNoteOnBridge();
+} else {
+  window.addEventListener(
+    'DOMContentLoaded',
+    () => {
+      if (isNoteOnPage()) initNoteOnBridge();
+    },
+    { once: true }
+  );
 }
 
+let bridgeInitialized = false;
+
 function initNoteOnBridge() {
+  if (bridgeInitialized) return;
+  bridgeInitialized = true;
+
   // Announce extension presence to the web page
   const announceReady = () => {
     window.postMessage(
       {
         source: 'NOTEON_EXTENSION',
         type: 'EXTENSION_READY',
-        version: '1.2.0',
+        version: '1.4.0',
       },
       '*'
     );
@@ -52,6 +61,7 @@ function initNoteOnBridge() {
         {
           source: 'NOTEON_EXTENSION',
           type: 'SCREENSHOT_CAPTURED',
+          itemId: message.itemId,
           dataUrl: message.dataUrl,
           pageTitle: message.pageTitle,
           capturedAt: message.capturedAt || Date.now(),
@@ -68,6 +78,7 @@ function initNoteOnBridge() {
         {
           source: 'NOTEON_EXTENSION',
           type: 'AUDIO_RECORDED',
+          itemId: message.itemId,
           dataUrl: message.dataUrl,
           duration: message.duration,
           transcript: message.transcript,
@@ -92,6 +103,7 @@ function initNoteOnBridge() {
             {
               source: 'NOTEON_EXTENSION',
               type: 'SCREENSHOT_CAPTURED',
+              itemId: cap.itemId,
               dataUrl: cap.dataUrl,
               pageTitle: cap.pageTitle,
               capturedAt: cap.capturedAt,
@@ -110,6 +122,7 @@ function initNoteOnBridge() {
             {
               source: 'NOTEON_EXTENSION',
               type: 'AUDIO_RECORDED',
+              itemId: audio.itemId,
               dataUrl: audio.dataUrl,
               duration: audio.duration,
               transcript: audio.transcript,
@@ -124,6 +137,8 @@ function initNoteOnBridge() {
     });
   }
 
+  let lastSyncedToken = null;
+
   // Automatically copy Cloud Session from NoteOn Web App into Extension Storage
   function syncCloudSessionFromWebApp() {
     try {
@@ -131,13 +146,23 @@ function initNoteOnBridge() {
       const userRaw = localStorage.getItem('noteon_cloud_user_v1');
       if (token && userRaw) {
         const user = JSON.parse(userRaw);
-        chrome.storage.local.set({
-          cloudToken: token,
-          cloudUser: user,
-          cloudApiBase: window.location.origin.includes('localhost')
-            ? 'https://note-on.pages.dev'
-            : window.location.origin,
-        });
+        chrome.storage.local.set(
+          {
+            cloudToken: token,
+            cloudUser: user,
+            cloudApiBase: window.location.origin.includes('localhost')
+              ? 'https://note-on.pages.dev'
+              : window.location.origin,
+          },
+          () => {
+            if (token !== lastSyncedToken) {
+              lastSyncedToken = token;
+              try {
+                chrome.runtime.sendMessage({ action: 'FLUSH_PENDING_TO_CLOUD' });
+              } catch (_) {}
+            }
+          }
+        );
       }
     } catch (_) {}
   }

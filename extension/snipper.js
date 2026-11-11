@@ -154,7 +154,7 @@
     chrome.runtime.sendMessage({ action: 'CAPTURE_FULL_NOW' }, (res) => {
       cleanup();
       if (res && res.success) {
-        showSuccessNotification();
+        showSuccessNotification(res);
       }
     });
   }
@@ -206,7 +206,7 @@
               (res) => {
                 cleanup();
                 if (res && res.success) {
-                  showSuccessNotification();
+                  showSuccessNotification(res);
                 }
               }
             );
@@ -221,17 +221,20 @@
   }
 
   // Visual success feedback on current page
-  function showSuccessNotification() {
+  function showSuccessNotification(res) {
+    const needsLogin = res && res.needsCloudLogin;
     const toast = document.createElement('div');
     toast.style.position = 'fixed';
     toast.style.top = '20px';
     toast.style.right = '20px';
     toast.style.zIndex = '2147483647';
     toast.style.background = '#090d16';
-    toast.style.color = '#34d399';
-    toast.style.padding = '10px 18px';
+    toast.style.color = needsLogin ? '#fbbf24' : '#34d399';
+    toast.style.padding = '12px 18px';
     toast.style.borderRadius = '14px';
-    toast.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+    toast.style.border = needsLogin
+      ? '1px solid rgba(245, 158, 11, 0.5)'
+      : '1px solid rgba(16, 185, 129, 0.4)';
     toast.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.6)';
     toast.style.fontSize = '12px';
     toast.style.fontWeight = 'bold';
@@ -241,10 +244,9 @@
     toast.style.gap = '8px';
     toast.style.transition = 'all 0.3s ease';
 
-    toast.innerHTML = `
-      <span style="font-size: 14px;">✓</span>
-      <span>Área marcada salva no NoteOn!</span>
-    `;
+    toast.innerHTML = needsLogin
+      ? `<span style="font-size: 14px;">⚠️</span><span>Print salvo na fila! Abra o ícone da extensão NoteOn e faça login para enviar ao outro PC.</span>`
+      : `<span style="font-size: 14px;">☁️✓</span><span>Print salvo e sincronizado na sua conta NoteOn!</span>`;
 
     document.body.appendChild(toast);
     setTimeout(() => {

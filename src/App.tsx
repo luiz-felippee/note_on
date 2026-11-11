@@ -210,6 +210,7 @@ export default function App() {
   const isInitialLoadedRef = useRef(false);
   const skipNextAutoSyncRef = useRef(false);
   const autoSyncTimeoutRef = useRef<any>(null);
+  const knownItemIdsRef = useRef<Set<string>>(new Set());
 
   const applyCloudDataToState = async (
     cloudData: {
@@ -232,6 +233,13 @@ export default function App() {
     const nextItems = cloudData.items || [];
     const nextQuestions = cloudData.questions || [];
 
+    const prevKnownIds = knownItemIdsRef.current;
+    const newlyArrivedItems =
+      prevKnownIds.size > 0
+        ? nextItems.filter((it) => !prevKnownIds.has(it.id))
+        : [];
+    knownItemIdsRef.current = new Set(nextItems.map((it) => it.id));
+
     setCourses(nextCourses);
     setSubjects(nextSubjects);
     setTopics(nextTopics);
@@ -250,6 +258,32 @@ export default function App() {
     }
     if (selectedSubjectId && deletedSet.has(selectedSubjectId)) {
       setSelectedSubjectId(null);
+    }
+
+    // Se chegou um novo print, áudio ou anotação de outro computador/extensão, abre a aula automaticamente!
+    if (newlyArrivedItems.length > 0) {
+      const sortedNew = [...newlyArrivedItems].sort(
+        (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+      );
+      const newest = sortedNew[0];
+      if (newest && newest.topicId && newest.subjectId) {
+        if (newest.courseId) {
+          setSelectedCourseId(newest.courseId);
+        }
+        setSelectedSubjectId(newest.subjectId);
+        setSelectedTopicId(newest.topicId);
+        setActiveMainView('timeline');
+
+        if (Date.now() - (newest.createdAt || 0) < 180000) {
+          const label =
+            newest.type === 'photo'
+              ? '📸 Novo print recebido da extensão na nuvem!'
+              : newest.type === 'audio'
+                ? '🎙️ Novo áudio recebido da extensão na nuvem!'
+                : '☁️ Nova anotação sincronizada na nuvem!';
+          showToast(label, 'success');
+        }
+      }
     }
 
     const syncedAt = cloudData.lastSyncedAt || fallbackTimestamp || Date.now();
@@ -542,6 +576,7 @@ export default function App() {
       getAllQuestions(),
     ]);
     skipNextAutoSyncRef.current = true;
+    knownItemIdsRef.current = new Set(itms.map((i) => i.id));
     setCourses(crs);
     setSubjects(subjs);
     setTopics(tps);
@@ -991,6 +1026,7 @@ export default function App() {
       linkedAudioItemId,
     };
 
+    knownItemIdsRef.current.add(newItem.id);
     setAllItems((prev) => [...prev, newItem]);
     const saved = await saveTimelineItem(newItem);
     setAllItems((prev) => prev.map((it) => (it.id === saved.id ? saved : it)));
@@ -1190,6 +1226,7 @@ export default function App() {
           : 'Print do Slide (Plugin)';
 
         await addTimelineEntry({
+          idOverride: event.data.itemId || undefined,
           topicIdOverride: targetTopicId,
           subjectIdOverride: targetSubjectId,
           type: 'photo',
@@ -1210,7 +1247,7 @@ export default function App() {
         setIsExtensionDetected(true);
         const { topicId: targetTopicId, subjectId: targetSubjectId } = await resolveTargetTopic();
 
-        const plannedId = `rec-${Date.now()}`;
+        const plannedId = event.data.itemId || `rec-${Date.now()}`;
         const finalDuration = Math.max(1, Math.round(event.data.duration || 10));
         const transcriptToSave = (event.data.transcript || '').trim();
         const titleText = event.data.pageTitle

@@ -471,13 +471,23 @@
             },
             (res) => {
               if (container) {
-                container.innerHTML = `
-                  <div style="display: flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; font-size: 13px;">
-                    <span>✓</span>
-                    <span>Áudio salvo com sucesso no NoteOn!</span>
-                  </div>
-                `;
-                setTimeout(() => cleanupAll(), 1800);
+                if (res && res.needsCloudLogin && !res.deliveredDirectly) {
+                  container.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 12px;">
+                      <span>⚠️</span>
+                      <span>Áudio na fila! Clique no ícone da extensão NoteOn e faça login para enviar ao outro PC.</span>
+                    </div>
+                  `;
+                  setTimeout(() => cleanupAll(), 4500);
+                } else {
+                  container.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; font-size: 13px;">
+                      <span>☁️✓</span>
+                      <span>Áudio salvo e sincronizado na sua conta NoteOn!</span>
+                    </div>
+                  `;
+                  setTimeout(() => cleanupAll(), 2200);
+                }
               }
             }
           );
@@ -486,7 +496,7 @@
           setTimeout(() => {
             const el = document.getElementById('noteon-floating-audio-recorder');
             if (el) cleanupAll();
-          }, 3500);
+          }, 5000);
         };
 
         reader.readAsDataURL(audioBlob);

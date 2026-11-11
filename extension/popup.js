@@ -10,27 +10,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const cloudLoggedBox = document.getElementById('cloudLoggedBox');
   const cloudLoginForm = document.getElementById('cloudLoginForm');
+  const cloudFormTitle = document.getElementById('cloudFormTitle');
+  const btnToggleResetPass = document.getElementById('btnToggleResetPass');
   const cloudEmailText = document.getElementById('cloudEmailText');
   const cloudEmailInput = document.getElementById('cloudEmailInput');
   const cloudPassInput = document.getElementById('cloudPassInput');
   const btnCloudLogin = document.getElementById('btnCloudLogin');
   const btnCloudLogout = document.getElementById('btnCloudLogout');
 
+  let isResetMode = false;
+
+  if (btnToggleResetPass) {
+    btnToggleResetPass.addEventListener('click', () => {
+      isResetMode = !isResetMode;
+      if (isResetMode) {
+        cloudFormTitle.textContent = '🔑 Criar Nova Senha';
+        btnToggleResetPass.textContent = 'Voltar ao Login';
+        cloudPassInput.placeholder = 'Digite sua NOVA senha (mín. 4 dígitos)';
+        btnCloudLogin.textContent = 'Redefinir Senha e Conectar';
+      } else {
+        cloudFormTitle.textContent = '☁️ Entrar na Conta NoteOn';
+        btnToggleResetPass.textContent = 'Esqueci Senha';
+        cloudPassInput.placeholder = 'Sua senha';
+        btnCloudLogin.textContent = 'Conectar Extensão na Conta';
+      }
+    });
+  }
+
   function updateCloudUI(cloudUser, hasOpenTab) {
     if (cloudUser && cloudUser.email) {
       cloudLoggedBox.style.display = 'block';
       cloudLoginForm.style.display = 'none';
       cloudEmailText.textContent = cloudUser.email;
-      statusBadge.textContent = '● Nuvem Conectada';
+      statusBadge.textContent = '● Conta Conectada';
       statusBadge.className = 'status-badge status-connected';
     } else {
       cloudLoggedBox.style.display = 'none';
       cloudLoginForm.style.display = 'block';
       if (hasOpenTab) {
-        statusBadge.textContent = '● Aba Aberta';
+        statusBadge.textContent = '● Aba Local Aberta';
         statusBadge.className = 'status-badge status-connected';
       } else {
-        statusBadge.textContent = '○ Conecte sua Conta';
+        statusBadge.textContent = '○ Faça Login Abaixo';
         statusBadge.className = 'status-badge status-disconnected';
       }
     }
@@ -53,16 +74,30 @@ document.addEventListener('DOMContentLoaded', () => {
       btnCloudLogin.disabled = true;
       btnCloudLogin.textContent = 'Conectando...';
       chrome.runtime.sendMessage(
-        { action: 'EXTENSION_CLOUD_LOGIN', email, password },
+        {
+          action: 'EXTENSION_CLOUD_LOGIN',
+          email,
+          password,
+          authAction: isResetMode ? 'reset_password' : 'login',
+        },
         (res) => {
           btnCloudLogin.disabled = false;
-          btnCloudLogin.textContent = 'Conectar Extensão na Nuvem';
+          btnCloudLogin.textContent = isResetMode
+            ? 'Redefinir Senha e Conectar'
+            : 'Conectar Extensão na Conta';
           if (res && res.success) {
+            isResetMode = false;
             updateCloudUI(res.user, false);
             toast.style.display = 'block';
-            toast.textContent = '✓ Extensão conectada na nuvem!';
+            toast.className = 'toast-msg toast-success';
+            const extra =
+              res.uploadedCount && res.uploadedCount > 0
+                ? ` (${res.uploadedCount} item(ns) na fila enviados!)`
+                : '';
+            toast.textContent = `✓ Conectado como ${res.user.email}!${extra}`;
           } else {
             toast.style.display = 'block';
+            toast.className = 'toast-msg status-disconnected';
             toast.textContent = (res && res.error) || 'Erro ao conectar.';
           }
         }
