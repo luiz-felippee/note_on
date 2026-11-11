@@ -344,7 +344,7 @@ export default function App() {
         showToast(`📱 Aparelho sincronizado com ${syncEmail}!`, 'success');
         window.history.replaceState({}, document.title, window.location.pathname);
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   const handlePerformCloudSync = async (silent = false) => {
@@ -764,7 +764,9 @@ export default function App() {
     return allItems
       .filter((i) => i.topicId === selectedTopicId)
       .sort((a, b) => {
-        if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex;
+        const orderA = a.orderIndex && a.orderIndex < 1000000 ? a.orderIndex : 0;
+        const orderB = b.orderIndex && b.orderIndex < 1000000 ? b.orderIndex : 0;
+        if (orderA > 0 && orderB > 0 && orderA !== orderB) return orderA - orderB;
         return a.createdAt - b.createdAt;
       });
   }, [allItems, selectedTopicId]);
@@ -772,14 +774,14 @@ export default function App() {
   const filteredTimelineItems = useMemo(() => {
     let base = globalSearch.trim()
       ? allItems.filter((item) => {
-          const q = globalSearch.toLowerCase();
-          return (
-            item.content.toLowerCase().includes(q) ||
-            (item.title && item.title.toLowerCase().includes(q)) ||
-            (item.transcript && item.transcript.toLowerCase().includes(q)) ||
-            item.timeLabel.includes(q)
-          );
-        })
+        const q = globalSearch.toLowerCase();
+        return (
+          item.content.toLowerCase().includes(q) ||
+          (item.title && item.title.toLowerCase().includes(q)) ||
+          (item.transcript && item.transcript.toLowerCase().includes(q)) ||
+          item.timeLabel.includes(q)
+        );
+      })
       : currentTopicItems;
 
     if (filterType === 'exam') {
@@ -1029,7 +1031,8 @@ export default function App() {
 
     const topicItems = allItems.filter((it) => it.topicId === targetTopicId);
     const maxOrder = topicItems.reduce(
-      (max, it) => Math.max(max, it.orderIndex || 0),
+      (max, it) =>
+        Math.max(max, it.orderIndex && it.orderIndex < 1000000 ? it.orderIndex : 0),
       0
     );
 
@@ -1113,7 +1116,7 @@ export default function App() {
       setScreenStream(stream);
       if (screenVideoRef.current) {
         screenVideoRef.current.srcObject = stream;
-        screenVideoRef.current.play().catch(() => {});
+        screenVideoRef.current.play().catch(() => { });
       }
       const track = stream.getVideoTracks()[0];
       if (track) {
@@ -1198,14 +1201,14 @@ export default function App() {
             setSelectedSubjectId(found.subjectId);
             return { topicId: found.id, subjectId: found.subjectId };
           }
-        } catch (_) {}
+        } catch (_) { }
 
         // 3. Matérias disponíveis
         let dbSubjects: Subject[] = subjects;
         if (!dbSubjects || dbSubjects.length === 0) {
           try {
             dbSubjects = await getAllSubjects();
-          } catch (_) {}
+          } catch (_) { }
         }
 
         let courseId = selectedCourseId;
@@ -1279,6 +1282,7 @@ export default function App() {
           title: titleText,
           content: '',
           mediaDataUrl: event.data.dataUrl,
+          customTimestampMs: event.data.capturedAt || Date.now(),
         });
 
         showToast(
@@ -1315,6 +1319,7 @@ export default function App() {
           mediaDataUrl: event.data.dataUrl,
           audioDurationSeconds: finalDuration,
           audioWaveform: sampledBars,
+          customTimestampMs: event.data.recordedAt || Date.now(),
         });
 
         showToast(
@@ -1569,7 +1574,7 @@ export default function App() {
 
       rec.stream.getTracks().forEach((t) => t.stop());
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
+      if (audioContextRef.current) audioContextRef.current.close().catch(() => { });
       setIsRecording(false);
       setIsPausedRecording(false);
       setRecordingSeconds(0);
@@ -1581,7 +1586,7 @@ export default function App() {
       if (rec.state === 'recording') {
         rec.requestData();
       }
-    } catch {}
+    } catch { }
     rec.stop();
   };
 
@@ -1601,7 +1606,7 @@ export default function App() {
       speechRecognitionRef.current = null;
     }
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
+    if (audioContextRef.current) audioContextRef.current.close().catch(() => { });
     setIsRecording(false);
     setIsPausedRecording(false);
     setRecordingSeconds(0);
@@ -2021,19 +2026,18 @@ export default function App() {
     <h1 style="margin:6px 0 0 0;font-size:22px;">${currentTopic.title}</h1>
   </div>
   ${currentTopicItems
-    .map(
-      (item, idx) => `
+        .map(
+          (item, idx) => `
     <div class="card">
-      <div class="meta">#${idx + 1} • ${item.timeLabel} (${item.dateLabel}) ${
-        item.importantForExam ? '• ⭐ Importante' : ''
-      }</div>
+      <div class="meta">#${idx + 1} • ${item.timeLabel} (${item.dateLabel}) ${item.importantForExam ? '• ⭐ Importante' : ''
+            }</div>
       ${item.title ? `<h3 style="margin:4px 0 8px 0;">${item.title}</h3>` : ''}
       ${item.type === 'photo' && item.mediaDataUrl ? `<img src="${item.mediaDataUrl}" />` : ''}
       ${item.type === 'audio' && item.mediaDataUrl ? `<audio controls src="${item.mediaDataUrl}"></audio>` : ''}
       <p style="white-space:pre-wrap;line-height:1.6;margin:6px 0 0 0;">${item.content}</p>
     </div>`
-    )
-    .join('')}
+        )
+        .join('')}
 </body>
 </html>`;
 
@@ -2151,17 +2155,15 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col md:flex-row transition-colors ${
-        lightMode ? 'bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'
-      }`}
+      className={`min-h-screen flex flex-col md:flex-row transition-colors ${lightMode ? 'bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'
+        }`}
     >
       {/* Mobile Top Bar */}
       <header
-        className={`md:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b ${
-          lightMode
+        className={`md:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b ${lightMode
             ? 'bg-white border-slate-200 text-slate-900'
             : 'bg-slate-900 border-slate-800 text-white'
-        }`}
+          }`}
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <button
@@ -2208,11 +2210,10 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowCloudModal(true)}
-            className={`p-2 rounded-lg cursor-pointer flex items-center gap-1.5 transition ${
-              cloudUser
+            className={`p-2 rounded-lg cursor-pointer flex items-center gap-1.5 transition ${cloudUser
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
                 : 'bg-slate-800 text-slate-300 hover:text-white'
-            }`}
+              }`}
             title={
               cloudUser
                 ? `Nuvem Conectada (${cloudUser.email}) - Clique para sincronizar`
@@ -2261,13 +2262,11 @@ export default function App() {
 
       {/* Clean 3-Level Sidebar (Course Selector -> Subjects -> Topics) */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col border-r transition-transform duration-200 ${
-          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        } ${
-          lightMode
+        className={`fixed md:static inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col border-r transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          } ${lightMode
             ? 'bg-white border-slate-200'
             : 'bg-slate-900/70 border-slate-800/80'
-        }`}
+          }`}
       >
         {/* Brand */}
         <div className="px-4 py-3.5 flex items-center justify-between border-b border-slate-800/50">
@@ -2294,13 +2293,12 @@ export default function App() {
               setActiveMainView('timeline');
               setMobileSidebarOpen(false);
             }}
-            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-              activeMainView === 'timeline'
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${activeMainView === 'timeline'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : lightMode
-                ? 'text-slate-600 hover:bg-slate-100'
-                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-            }`}
+                  ? 'text-slate-600 hover:bg-slate-100'
+                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+              }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>Aulas</span>
@@ -2312,13 +2310,12 @@ export default function App() {
               setActiveMainView('global_search');
               setMobileSidebarOpen(false);
             }}
-            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-              activeMainView === 'global_search'
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${activeMainView === 'global_search'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : lightMode
-                ? 'text-slate-600 hover:bg-slate-100'
-                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-            }`}
+                  ? 'text-slate-600 hover:bg-slate-100'
+                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+              }`}
           >
             <Search className="w-3.5 h-3.5" />
             <span>Pesquisa Global</span>
@@ -2365,11 +2362,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setShowCourseDropdown((v) => !v)}
-              className={`w-full px-3 py-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer ${
-                lightMode
+              className={`w-full px-3 py-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition cursor-pointer ${lightMode
                   ? 'bg-white border-slate-200 text-slate-900'
                   : 'bg-slate-900 border-slate-700/80 text-white'
-              }`}
+                }`}
             >
               <span className="flex items-center gap-2 truncate">
                 <GraduationCap className="w-4 h-4 text-indigo-400 shrink-0" />
@@ -2387,11 +2383,10 @@ export default function App() {
                   className="fixed inset-0 z-30"
                 />
                 <div
-                  className={`absolute left-0 right-0 mt-1 rounded-xl border shadow-2xl z-40 py-1 max-h-56 overflow-y-auto ${
-                    lightMode
+                  className={`absolute left-0 right-0 mt-1 rounded-xl border shadow-2xl z-40 py-1 max-h-56 overflow-y-auto ${lightMode
                       ? 'bg-white border-slate-200 text-slate-800'
                       : 'bg-slate-900 border-slate-800 text-slate-200'
-                  }`}
+                    }`}
                 >
                   {courses.map((crs) => {
                     const isSelected = crs.id === selectedCourseId;
@@ -2405,11 +2400,10 @@ export default function App() {
                           setSelectedCourseId(crs.id);
                           setShowCourseDropdown(false);
                         }}
-                        className={`group px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition ${
-                          isSelected
+                        className={`group px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition ${isSelected
                             ? 'bg-indigo-600/15 text-indigo-400 font-semibold'
                             : 'hover:bg-slate-800/50'
-                        }`}
+                          }`}
                       >
                         <div className="truncate">
                           <div>{crs.name}</div>
@@ -2465,11 +2459,10 @@ export default function App() {
               value={globalSearch}
               onChange={(e) => setGlobalSearch(e.target.value)}
               placeholder="Buscar anotação ou horário..."
-              className={`w-full rounded-lg pl-8 pr-7 py-1.5 text-xs border focus:outline-none focus:border-indigo-500 ${
-                lightMode
+              className={`w-full rounded-lg pl-8 pr-7 py-1.5 text-xs border focus:outline-none focus:border-indigo-500 ${lightMode
                   ? 'bg-slate-100 border-slate-200 text-slate-900'
                   : 'bg-slate-950/80 border-slate-800 text-slate-100'
-              }`}
+                }`}
             />
             {globalSearch && (
               <button
@@ -2522,15 +2515,14 @@ export default function App() {
                         setSelectedSubjectId(subj.id);
                         setGlobalSearch('');
                       }}
-                      className={`group flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer text-xs transition ${
-                        isSelected
+                      className={`group flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer text-xs transition ${isSelected
                           ? lightMode
                             ? 'bg-indigo-50 text-indigo-700 font-semibold'
                             : 'bg-slate-800 text-white font-semibold'
                           : lightMode
-                          ? 'text-slate-600 hover:bg-slate-100'
-                          : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
-                      }`}
+                            ? 'text-slate-600 hover:bg-slate-100'
+                            : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                        }`}
                     >
                       <div className="flex items-center gap-2.5 truncate">
                         <span
@@ -2605,15 +2597,14 @@ export default function App() {
                         setGlobalSearch('');
                         setMobileSidebarOpen(false);
                       }}
-                      className={`group rounded-lg px-3 py-2.5 cursor-pointer transition ${
-                        isSelected
+                      className={`group rounded-lg px-3 py-2.5 cursor-pointer transition ${isSelected
                           ? lightMode
                             ? 'bg-slate-200/80 text-slate-900 font-semibold'
                             : 'bg-indigo-600/15 border border-indigo-500/30 text-white'
                           : lightMode
-                          ? 'hover:bg-slate-100 text-slate-600'
-                          : 'hover:bg-slate-800/40 text-slate-400'
-                      }`}
+                            ? 'hover:bg-slate-100 text-slate-600'
+                            : 'hover:bg-slate-800/40 text-slate-400'
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-xs font-medium truncate flex-1">{tp.title}</span>
@@ -2662,13 +2653,12 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowCloudModal(true)}
-            className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition cursor-pointer ${
-              cloudUser
+            className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition cursor-pointer ${cloudUser
                 ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
                 : lightMode
-                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                : 'bg-slate-800/60 text-slate-300 hover:bg-slate-800'
-            }`}
+                  ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  : 'bg-slate-800/60 text-slate-300 hover:bg-slate-800'
+              }`}
           >
             <span className="flex items-center gap-2 truncate">
               <Cloud className="w-4 h-4 text-indigo-400 shrink-0" />
@@ -2699,934 +2689,911 @@ export default function App() {
         ) : (
           <>
             {/* Clean Header: Course › Subject › Lesson */}
-        {currentTopic && currentSubject && (
-          <div
-            className={`px-3.5 sm:px-6 md:px-8 py-2.5 sm:py-3.5 border-b shrink-0 flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-4 ${
-              lightMode
-                ? 'bg-white border-slate-200'
-                : 'bg-slate-950/90 border-slate-800/80'
-            }`}
-          >
-            {/* Breadcrumb Hierarchy */}
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-x-auto no-scrollbar whitespace-nowrap py-0.5">
-                <span className="text-slate-300 font-semibold truncate max-w-[120px] sm:max-w-none">
-                  {currentCourse?.name || 'Curso'}
-                </span>
-                <span>›</span>
-                <span
-                  style={{ color: currentSubject.color }}
-                  className="font-medium truncate max-w-[140px] sm:max-w-none"
-                >
-                  {currentSubject.name}
-                </span>
-                <span>›</span>
-                <span className="font-mono text-[11px] shrink-0">
-                  {currentTopic.date.split('-').reverse().join('/')} às{' '}
-                  {currentTopic.startTime.slice(0, 5)}
-                </span>
-              </div>
-              <h2 className="text-base md:text-lg font-bold tracking-tight truncate mt-0.5 flex items-center gap-2">
-                <span className="truncate">{currentTopic.title}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingTopic(currentTopic);
-                    setEditTopicTitle(currentTopic.title);
-                  }}
-                  className="text-slate-500 hover:text-indigo-400 cursor-pointer p-1 rounded transition shrink-0"
-                  title="Editar Título da Aula"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
-              </h2>
-            </div>
-
-            {/* Right: Clean Filter Tabs (touch swipeable on mobile) + Options Menu */}
-            <div className="flex items-center gap-2 max-w-full min-w-0">
+            {currentTopic && currentSubject && (
               <div
-                className={`flex items-center p-1 rounded-xl border text-xs overflow-x-auto no-scrollbar shrink min-w-0 ${
-                  lightMode
-                    ? 'bg-slate-100 border-slate-200'
-                    : 'bg-slate-900 border-slate-800'
-                }`}
+                className={`px-3.5 sm:px-6 md:px-8 py-2.5 sm:py-3.5 border-b shrink-0 flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-4 ${lightMode
+                    ? 'bg-white border-slate-200'
+                    : 'bg-slate-950/90 border-slate-800/80'
+                  }`}
               >
-                <button
-                  type="button"
-                  onClick={() => setFilterType('all')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
-                    filterType === 'all'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Tudo ({currentTopicItems.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('photo')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
-                    filterType === 'photo'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Fotos ({stats.photos})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('audio')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
-                    filterType === 'audio'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Áudios ({stats.audios})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('exam')}
-                  className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                    filterType === 'exam'
-                      ? 'bg-amber-500 text-slate-950 font-semibold'
-                      : 'text-slate-400 hover:text-amber-300'
-                  }`}
-                >
-                  <Star className="w-3 h-3" />
-                  <span>Importantes</span> ({stats.exams})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('questions')}
-                  className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
-                    filterType === 'questions'
-                      ? 'bg-purple-600 text-white font-semibold shadow-sm'
-                      : currentTopicQuestions.length > 0
-                      ? 'text-purple-300 hover:text-purple-200 bg-purple-500/20 hover:bg-purple-500/30 ring-1 ring-purple-500/40'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Questões de fixação geradas da transcrição da aula"
-                >
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  <span>Questões</span>
-                  <span
-                    className={`px-1.5 py-0.2 text-[10px] rounded-full font-bold ${
-                      filterType === 'questions'
-                        ? 'bg-purple-800 text-white'
-                        : currentTopicQuestions.length > 0
-                        ? 'bg-purple-500/40 text-purple-200'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {currentTopicQuestions.length}
-                  </span>
-                </button>
-              </div>
-
-              {/* SM-2 Spaced Repetition Due Today Action */}
-              {subjectDueCards.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReviewOnlyDueCards(true);
-                    setShowFlashcardsModal(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 animate-pulse shadow-sm"
-                  title="Flashcards agendados pelo algoritmo SM-2 para hoje"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Revisões Hoje ({subjectDueCards.length})</span>
-                </button>
-              )}
-
-              {/* Cloud Sync Status Indicator Pill */}
-              <button
-                type="button"
-                onClick={() => setShowCloudModal(true)}
-                title={
-                  cloudUser
-                    ? `Sincronização ativa: ${cloudUser.email}`
-                    : 'Nuvem desconectada. Clique para sincronizar celular e PC.'
-                }
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer shrink-0 ${
-                  !cloudUser
-                    ? 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:text-slate-200'
-                    : isSyncingCloud
-                    ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                }`}
-              >
-                <Cloud
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    isSyncingCloud
-                      ? 'animate-spin text-amber-400'
-                      : cloudUser
-                      ? 'text-emerald-400'
-                      : 'text-slate-500'
-                  }`}
-                />
-                <span className="hidden lg:inline">
-                  {!cloudUser
-                    ? 'Nuvem'
-                    : isSyncingCloud
-                    ? 'Sincronizando...'
-                    : 'Salvo na Nuvem'}
-                </span>
-              </button>
-
-              {/* Tutor IA Button in Header */}
-              <button
-                type="button"
-                onClick={() => setShowAiChatModal(true)}
-                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer transition shrink-0"
-                title="Abrir Tutor IA de Estudos (Multi-Modelos: Gemini, Groq, DeepSeek, OpenAI)"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                <span className="hidden sm:inline">Tutor IA</span>
-              </button>
-
-              {/* Options Menu */}
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowHeaderMenu((v) => !v)}
-                  className={`p-2 rounded-xl border transition cursor-pointer ${
-                    lightMode
-                      ? 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700'
-                      : 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300'
-                  }`}
-                  title="Mais opções"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-
-                {showHeaderMenu && (
-                  <>
-                    <div
-                      onClick={() => setShowHeaderMenu(false)}
-                      className="fixed inset-0 z-30"
-                    />
-                    <div
-                      className={`absolute right-0 mt-2 w-56 rounded-xl border shadow-xl z-40 py-1.5 text-xs ${
-                        lightMode
-                          ? 'bg-white border-slate-200 text-slate-700'
-                          : 'bg-slate-900 border-slate-800 text-slate-200'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHeaderMenu(false);
-                          setShowCarouselModal(true);
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <ImageIcon className="w-4 h-4 text-cyan-400" />
-                        <span>Modo Slides de Fotos ({stats.photos})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHeaderMenu(false);
-                          setShowFlashcardsModal(true);
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <Star className="w-4 h-4 text-amber-400" />
-                        <span>Revisar Importantes (Flashcards)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={restoreStrictChronologicalOrder}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <RotateCcw className="w-4 h-4 text-indigo-400" />
-                        <span>Reordenar por Horário Exato</span>
-                      </button>
-
-                      <div className="my-1 border-t border-slate-800/60" />
-
-                      <button
-                        type="button"
-                        onClick={exportTopicStudySheet}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <Download className="w-4 h-4 text-emerald-400" />
-                        <span>Exportar Apostila da Aula</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleSendLessonToWhatsApp}
-                        className="w-full px-3.5 py-2 text-left hover:bg-emerald-600/15 text-emerald-400 flex items-center gap-2.5 cursor-pointer font-medium"
-                      >
-                        <MessageCircle className="w-4 h-4 text-emerald-400" />
-                        <span>Mandar Resumo pro WhatsApp</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleEditWhatsAppNumber}
-                        className="w-full px-3.5 py-2 text-left hover:bg-slate-800 text-slate-300 hover:text-emerald-300 flex items-center justify-between cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Smartphone className="w-4 h-4 text-emerald-400" />
-                          <span>Editar Número do WhatsApp</span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {getStoredWhatsAppConfig().phone ? formatPhoneForDisplay(getStoredWhatsAppConfig().phone) : 'Não definido'}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleExportFullBackup}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <Download className="w-4 h-4 text-slate-400" />
-                        <span>Salvar Backup Completo (.json)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => backupInputRef.current?.click()}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <Upload className="w-4 h-4 text-slate-400" />
-                        <span>Restaurar Backup (.json)</span>
-                      </button>
-
-                      <div className="my-1 border-t border-slate-800/60" />
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHeaderMenu(false);
-                          handleInstallPwa();
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-indigo-400 font-medium"
-                      >
-                        <Smartphone className="w-4 h-4" />
-                        <span>{isStandalone ? 'App Instalado (PWA)' : 'Instalar NoteOn no Celular'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHeaderMenu(false);
-                          handleRequestNotifications();
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-amber-400 font-medium"
-                      >
-                        <Bell className="w-4 h-4" />
-                        <span>
-                          {notificationPermission === 'granted'
-                            ? 'Lembretes Ativados 🔔'
-                            : 'Ativar Lembretes de Estudo'}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHeaderMenu(false);
-                          setShowExtensionModal(true);
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-purple-400 font-medium"
-                      >
-                        <Puzzle className="w-4 h-4" />
-                        <span>Plugin do Navegador (Alt + S)</span>
-                      </button>
-
-                      <div className="my-1 border-t border-slate-800/60" />
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLightMode((v) => !v);
-                          setShowHeaderMenu(false);
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        {lightMode ? (
-                          <Moon className="w-4 h-4 text-indigo-400" />
-                        ) : (
-                          <Sun className="w-4 h-4 text-amber-400" />
-                        )}
-                        <span>{lightMode ? 'Modo Escuro' : 'Modo Claro'}</span>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-              <input
-                ref={backupInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleImportFullBackup}
-                className="hidden"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Chronological Timeline or Topic Questions View */}
-        <div className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6">
-          <div className="max-w-3xl mx-auto">
-            {/* Prominent Questions Banner when questions exist and user is in another tab */}
-            {currentTopicQuestions.length > 0 && filterType !== 'questions' && (
-              <div
-                onClick={() => setFilterType('questions')}
-                className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-purple-950/40 via-purple-900/30 to-indigo-950/40 border border-purple-800/50 hover:border-purple-600/80 transition cursor-pointer flex items-center justify-between gap-3 group shadow-sm"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="p-1.5 rounded-xl bg-purple-500/20 text-purple-300 group-hover:scale-105 transition">
-                    <HelpCircle className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <p className="text-xs font-semibold text-purple-200">
-                      Esta aula possui {currentTopicQuestions.length}{' '}
-                      {currentTopicQuestions.length === 1
-                        ? 'questão gerada'
-                        : 'questões geradas'}{' '}
-                      da fala do professor!
-                    </p>
-                    <p className="text-[11px] text-purple-400/80">
-                      Clique para testar e fixar o conteúdo agora
-                    </p>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium shrink-0 transition shadow">
-                  Ver Questões →
-                </span>
-              </div>
-            )}
-
-            {filterType === 'questions' ? (
-              <TopicQuestionsView
-                questions={currentTopicQuestions}
-                topicTitle={currentTopic?.title || 'Aula'}
-                subjectName={currentSubject?.name || 'Disciplina'}
-                lightMode={lightMode}
-                isGenerating={isGeneratingQuestions}
-                hasAudioTranscripts={topicAudiosWithTranscript.length > 0}
-                onGenerateFromAudios={handleGenerateQuestionsForCurrentTopic}
-                onUpdateQuestion={handleUpdateQuestion}
-                onDeleteQuestion={handleDeleteQuestion}
-                onJumpToAudio={(audioId) => {
-                  setFilterType('all');
-                  setTimeout(() => {
-                    const el = document.getElementById(`timeline-card-${audioId}`);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }, 150);
-                }}
-              />
-            ) : filteredTimelineItems.length === 0 ? (
-              <div
-                className={`rounded-2xl border border-dashed p-8 sm:p-12 text-center my-6 sm:my-8 ${
-                  lightMode
-                    ? 'border-slate-300 text-slate-500'
-                    : 'border-slate-800 text-slate-400'
-                }`}
-              >
-                <Layers className="w-8 h-8 text-indigo-400 mx-auto mb-2 opacity-80" />
-                <h3 className="text-sm font-semibold text-slate-200">
-                  Linha do tempo vazia
-                </h3>
-                <p className="text-xs mt-1">
-                  Use a barra abaixo para digitar notas, tirar fotos ou gravar áudio em ordem cronológica.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 sm:space-y-4">
-                {filteredTimelineItems.map((item, idx) => {
-                  const isEditing = editingItemId === item.id;
-                  const isMenuOpen = openCardMenuId === item.id;
-
-                  return (
-                    <div
-                      key={item.id}
-                      id={`timeline-card-${item.id}`}
-                      className="flex md:gap-4 items-start group w-full"
-                    >
-                      {/* Left Column: Chronological Timestamp (Desktop only) */}
-                      <div className="hidden md:block w-16 md:w-20 shrink-0 pt-3 text-right select-none">
-                        <div className="font-mono text-xs font-semibold text-indigo-400">
-                          {item.timeLabel}
-                        </div>
-                        <div className="font-mono text-[10px] text-slate-500">
-                          #{String(idx + 1).padStart(2, '0')}
-                        </div>
-                      </div>
-
-                      {/* Vertical Timeline Line + Dot (Desktop only) */}
-                      <div className="hidden md:flex flex-col items-center self-stretch pt-4">
-                        <div
-                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                            item.type === 'photo'
-                              ? 'bg-cyan-400'
-                              : item.type === 'audio'
-                              ? 'bg-emerald-400'
-                              : 'bg-indigo-400'
-                          }`}
-                        />
-                        <div className="w-px flex-1 bg-slate-800/80 my-1" />
-                      </div>
-
-                      {/* Right Column / Full Mobile Card */}
-                      <div
-                        className={`w-full flex-1 min-w-0 rounded-xl sm:rounded-2xl border p-3.5 sm:p-4 transition ${
-                          highlightItemId === item.id
-                            ? 'ring-2 ring-indigo-500 shadow-xl shadow-indigo-500/30 animate-pulse'
-                            : ''
-                        } ${
-                          item.importantForExam
-                            ? lightMode
-                              ? 'bg-amber-50/60 border-amber-300'
-                              : 'bg-slate-900/90 border-amber-500/40'
-                            : lightMode
-                            ? 'bg-white border-slate-200/90'
-                            : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700/80'
-                        }`}
-                      >
-                        {/* Minimal Card Top Row */}
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                            {/* Mobile Timestamp Badge */}
-                            <div className="md:hidden flex items-center gap-1.5 shrink-0">
-                              <span className="font-mono text-[11px] font-bold text-indigo-400 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 rounded-md">
-                                #{String(idx + 1).padStart(2, '0')} • {item.timeLabel}
-                              </span>
-                            </div>
-
-                            <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 truncate">
-                              {item.type === 'photo' ? (
-                                <ImageIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                              ) : item.type === 'audio' ? (
-                                <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              ) : (
-                                <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                              )}
-                              <span className="truncate">
-                                {item.title ||
-                                  (item.type === 'photo'
-                                    ? 'Foto'
-                                    : item.type === 'audio'
-                                    ? 'Gravação de Áudio'
-                                    : 'Anotação')}
-                              </span>
-                            </span>
-
-                            {item.lectureRelativeTimestamp && (
-                              <button
-                                type="button"
-                                onClick={() => handleSeekToLectureAudio(item)}
-                                className="px-2 py-0.5 rounded-md bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-[11px] font-mono flex items-center gap-1 transition cursor-pointer shrink-0"
-                                title="Ouvir este momento no áudio da aula"
-                              >
-                                <Headphones className="w-3 h-3" />
-                                <span>{item.lectureRelativeTimestamp}</span>
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Minimal Actions: Star + ⋯ Dropdown */}
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => toggleExamStar(item)}
-                              className={`p-1.5 sm:p-1 rounded-lg transition cursor-pointer ${
-                                item.importantForExam
-                                  ? 'text-amber-400'
-                                  : 'text-slate-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-amber-300'
-                              }`}
-                              title="Destacar como importante"
-                            >
-                              <Star
-                                className={`w-4 h-4 ${
-                                  item.importantForExam ? 'fill-amber-400' : ''
-                                }`}
-                              />
-                            </button>
-
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenCardMenuId(isMenuOpen ? null : item.id)
-                                }
-                                className="p-1.5 sm:p-1 rounded-lg text-slate-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-slate-200 transition cursor-pointer"
-                              >
-                                <MoreHorizontal className="w-4 h-4" />
-                              </button>
-
-                              {isMenuOpen && (
-                                <>
-                                  <div
-                                    onClick={() => setOpenCardMenuId(null)}
-                                    className="fixed inset-0 z-20"
-                                  />
-                                  <div
-                                    className={`absolute right-0 mt-1 w-36 rounded-xl border shadow-xl z-30 py-1 text-xs ${
-                                      lightMode
-                                        ? 'bg-white border-slate-200 text-slate-700'
-                                        : 'bg-slate-900 border-slate-800 text-slate-200'
-                                    }`}
-                                  >
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingItemId(item.id);
-                                        setEditingTitle(item.title || '');
-                                        setEditingContent(item.content);
-                                        setOpenCardMenuId(null);
-                                      }}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                      <span>Editar</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={idx === 0}
-                                      onClick={() => moveItemOrder(item.id, 'up')}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-800 disabled:opacity-40 flex items-center gap-2 cursor-pointer"
-                                    >
-                                      <ArrowUp className="w-3.5 h-3.5" />
-                                      <span>Subir</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={
-                                        idx === filteredTimelineItems.length - 1
-                                      }
-                                      onClick={() => moveItemOrder(item.id, 'down')}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-800 disabled:opacity-40 flex items-center gap-2 cursor-pointer"
-                                    >
-                                      <ArrowDown className="w-3.5 h-3.5" />
-                                      <span>Descer</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteItem(item.id)}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-rose-500/15 text-rose-400 flex items-center gap-2 cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      <span>Excluir</span>
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Photo Body */}
-                        {item.type === 'photo' && item.mediaDataUrl && (
-                          <div
-                            onClick={() => setActivePhotoItem(item)}
-                            className="relative rounded-xl overflow-hidden border border-slate-800/80 bg-slate-950 max-h-80 flex items-center justify-center cursor-zoom-in my-2"
-                          >
-                            <img
-                              src={item.mediaDataUrl}
-                              alt={item.title || 'Foto'}
-                              className="max-h-80 w-auto object-contain"
-                            />
-                            {item.photoHighlights &&
-                              item.photoHighlights.length > 0 && (
-                                <svg
-                                  viewBox="0 0 100 100"
-                                  preserveAspectRatio="none"
-                                  className="absolute inset-0 w-full h-full pointer-events-none"
-                                >
-                                  {item.photoHighlights.map((st, sIdx) => (
-                                    <polyline
-                                      key={sIdx}
-                                      fill="none"
-                                      stroke={st.color}
-                                      strokeWidth={st.width}
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      points={st.points
-                                        .map((p) => `${p.x},${p.y}`)
-                                        .join(' ')}
-                                    />
-                                  ))}
-                                </svg>
-                              )}
-                          </div>
-                        )}
-
-                        {/* Audio Body */}
-                        {item.type === 'audio' && item.mediaDataUrl && (
-                          <div className="my-2">
-                            <AudioPlayerCard
-                              src={item.mediaDataUrl}
-                              durationHint={item.audioDurationSeconds}
-                              waveform={item.audioWaveform}
-                              accentColor={currentSubject?.color || '#6366f1'}
-                              title={item.title}
-                              transcript={item.transcript}
-                              markers={item.audioMarkers}
-                              seekRequest={
-                                audioSeekTarget &&
-                                audioSeekTarget.audioItemId === item.id
-                                  ? {
-                                      timeSeconds: audioSeekTarget.timeSeconds,
-                                      triggerId: audioSeekTarget.triggerId,
-                                    }
-                                  : null
-                              }
-                              onGenerateQuestions={
-                                item.transcript && item.transcript.trim().length > 15
-                                  ? () => handleGenerateQuestionsForSingleAudio(item)
-                                  : undefined
-                              }
-                            />
-                          </div>
-                        )}
-
-                        {/* Text or Caption */}
-                        {isEditing ? (
-                          <div className="space-y-2 mt-2 pt-2 border-t border-slate-800">
-                            <input
-                              type="text"
-                              value={editingTitle}
-                              onChange={(e) => setEditingTitle(e.target.value)}
-                              placeholder="Título (opcional)"
-                              className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-xs text-white"
-                            />
-                            <textarea
-                              rows={3}
-                              value={editingContent}
-                              onChange={(e) => setEditingContent(e.target.value)}
-                              className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white"
-                            />
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setEditingItemId(null)}
-                                className="px-3 py-1 rounded-lg bg-slate-800 text-xs text-slate-300 cursor-pointer"
-                              >
-                                Cancelar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleSaveItemEdit(item)}
-                                className="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white cursor-pointer"
-                              >
-                                Salvar
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          item.content && (
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap text-slate-200 mt-1">
-                              {item.content}
-                            </p>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Sleek Unified Bottom Capture Bar (Fixed thumb-friendly dock on mobile) */}
-        {currentTopic && (
-          <div className="px-3 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shrink-0 bg-slate-950/90 backdrop-blur-md md:bg-transparent border-t border-slate-800/80 md:border-none">
-            <div className="max-w-3xl mx-auto">
-              {isRecording && (
-                <div className="mb-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 flex items-center justify-between gap-2 sm:gap-3 shadow-lg">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
-                    <span className="font-mono text-xs font-bold text-white shrink-0">
-                      {formatDuration(recordingSeconds)}
+                {/* Breadcrumb Hierarchy */}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-x-auto no-scrollbar whitespace-nowrap py-0.5">
+                    <span className="text-slate-300 font-semibold truncate max-w-[120px] sm:max-w-none">
+                      {currentCourse?.name || 'Curso'}
                     </span>
-                    <div className="flex items-center gap-0.5 h-5 shrink-0">
-                      {liveWaveform.slice(0, 10).map((v, i) => (
-                        <div
-                          key={i}
-                          style={{ height: `${Math.max(20, Math.round(v * 100))}%` }}
-                          className="w-1 bg-rose-400 rounded-full"
-                        />
-                      ))}
-                    </div>
-                    {liveTranscript && (
-                      <span className="text-xs text-rose-200/80 italic truncate hidden sm:inline">
-                        "{liveTranscript}"
-                      </span>
-                    )}
+                    <span>›</span>
+                    <span
+                      style={{ color: currentSubject.color }}
+                      className="font-medium truncate max-w-[140px] sm:max-w-none"
+                    >
+                      {currentSubject.name}
+                    </span>
+                    <span>›</span>
+                    <span className="font-mono text-[11px] shrink-0">
+                      {currentTopic.date.split('-').reverse().join('/')} às{' '}
+                      {currentTopic.startTime.slice(0, 5)}
+                    </span>
                   </div>
-
-                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  <h2 className="text-base md:text-lg font-bold tracking-tight truncate mt-0.5 flex items-center gap-2">
+                    <span className="truncate">{currentTopic.title}</span>
                     <button
                       type="button"
-                      onClick={togglePauseRecording}
-                      className="p-1.5 rounded-lg bg-slate-900/80 text-slate-200 hover:bg-slate-800 cursor-pointer"
-                      title={isPausedRecording ? 'Retomar' : 'Pausar'}
+                      onClick={() => {
+                        setEditingTopic(currentTopic);
+                        setEditTopicTitle(currentTopic.title);
+                      }}
+                      className="text-slate-500 hover:text-indigo-400 cursor-pointer p-1 rounded transition shrink-0"
+                      title="Editar Título da Aula"
                     >
-                      {isPausedRecording ? (
-                        <Play className="w-3.5 h-3.5 text-emerald-400" />
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  </h2>
+                </div>
+
+                {/* Right: Clean Filter Tabs (touch swipeable on mobile) + Options Menu */}
+                <div className="flex items-center gap-2 max-w-full min-w-0">
+                  <div
+                    className={`flex items-center p-1 rounded-xl border text-xs overflow-x-auto no-scrollbar shrink min-w-0 ${lightMode
+                        ? 'bg-slate-100 border-slate-200'
+                        : 'bg-slate-900 border-slate-800'
+                      }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('all')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${filterType === 'all'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                    >
+                      Tudo ({currentTopicItems.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('photo')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${filterType === 'photo'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                    >
+                      Fotos ({stats.photos})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('audio')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${filterType === 'audio'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                    >
+                      Áudios ({stats.audios})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('exam')}
+                      className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0 ${filterType === 'exam'
+                          ? 'bg-amber-500 text-slate-950 font-semibold'
+                          : 'text-slate-400 hover:text-amber-300'
+                        }`}
+                    >
+                      <Star className="w-3 h-3" />
+                      <span>Importantes</span> ({stats.exams})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('questions')}
+                      className={`px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${filterType === 'questions'
+                          ? 'bg-purple-600 text-white font-semibold shadow-sm'
+                          : currentTopicQuestions.length > 0
+                            ? 'text-purple-300 hover:text-purple-200 bg-purple-500/20 hover:bg-purple-500/30 ring-1 ring-purple-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      title="Questões de fixação geradas da transcrição da aula"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      <span>Questões</span>
+                      <span
+                        className={`px-1.5 py-0.2 text-[10px] rounded-full font-bold ${filterType === 'questions'
+                            ? 'bg-purple-800 text-white'
+                            : currentTopicQuestions.length > 0
+                              ? 'bg-purple-500/40 text-purple-200'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                      >
+                        {currentTopicQuestions.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* SM-2 Spaced Repetition Due Today Action */}
+                  {subjectDueCards.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReviewOnlyDueCards(true);
+                        setShowFlashcardsModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 animate-pulse shadow-sm"
+                      title="Flashcards agendados pelo algoritmo SM-2 para hoje"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Revisões Hoje ({subjectDueCards.length})</span>
+                    </button>
+                  )}
+
+                  {/* Cloud Sync Status Indicator Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setShowCloudModal(true)}
+                    title={
+                      cloudUser
+                        ? `Sincronização ativa: ${cloudUser.email}`
+                        : 'Nuvem desconectada. Clique para sincronizar celular e PC.'
+                    }
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer shrink-0 ${!cloudUser
+                        ? 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:text-slate-200'
+                        : isSyncingCloud
+                          ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                          : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                      }`}
+                  >
+                    <Cloud
+                      className={`w-3.5 h-3.5 shrink-0 ${isSyncingCloud
+                          ? 'animate-spin text-amber-400'
+                          : cloudUser
+                            ? 'text-emerald-400'
+                            : 'text-slate-500'
+                        }`}
+                    />
+                    <span className="hidden lg:inline">
+                      {!cloudUser
+                        ? 'Nuvem'
+                        : isSyncingCloud
+                          ? 'Sincronizando...'
+                          : 'Salvo na Nuvem'}
+                    </span>
+                  </button>
+
+                  {/* Tutor IA Button in Header */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAiChatModal(true)}
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer transition shrink-0"
+                    title="Abrir Tutor IA de Estudos (Multi-Modelos: Gemini, Groq, DeepSeek, OpenAI)"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                    <span className="hidden sm:inline">Tutor IA</span>
+                  </button>
+
+                  {/* Options Menu */}
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowHeaderMenu((v) => !v)}
+                      className={`p-2 rounded-xl border transition cursor-pointer ${lightMode
+                          ? 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700'
+                          : 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300'
+                        }`}
+                      title="Mais opções"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
+
+                    {showHeaderMenu && (
+                      <>
+                        <div
+                          onClick={() => setShowHeaderMenu(false)}
+                          className="fixed inset-0 z-30"
+                        />
+                        <div
+                          className={`absolute right-0 mt-2 w-56 rounded-xl border shadow-xl z-40 py-1.5 text-xs ${lightMode
+                              ? 'bg-white border-slate-200 text-slate-700'
+                              : 'bg-slate-900 border-slate-800 text-slate-200'
+                            }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowHeaderMenu(false);
+                              setShowCarouselModal(true);
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            <ImageIcon className="w-4 h-4 text-cyan-400" />
+                            <span>Modo Slides de Fotos ({stats.photos})</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowHeaderMenu(false);
+                              setShowFlashcardsModal(true);
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            <Star className="w-4 h-4 text-amber-400" />
+                            <span>Revisar Importantes (Flashcards)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={restoreStrictChronologicalOrder}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            <RotateCcw className="w-4 h-4 text-indigo-400" />
+                            <span>Reordenar por Horário Exato</span>
+                          </button>
+
+                          <div className="my-1 border-t border-slate-800/60" />
+
+                          <button
+                            type="button"
+                            onClick={exportTopicStudySheet}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            <Download className="w-4 h-4 text-emerald-400" />
+                            <span>Exportar Apostila da Aula</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleSendLessonToWhatsApp}
+                            className="w-full px-3.5 py-2 text-left hover:bg-emerald-600/15 text-emerald-400 flex items-center gap-2.5 cursor-pointer font-medium"
+                          >
+                            <MessageCircle className="w-4 h-4 text-emerald-400" />
+                            <span>Mandar Resumo pro WhatsApp</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleEditWhatsAppNumber}
+                            className="w-full px-3.5 py-2 text-left hover:bg-slate-800 text-slate-300 hover:text-emerald-300 flex items-center justify-between cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Smartphone className="w-4 h-4 text-emerald-400" />
+                              <span>Editar Número do WhatsApp</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {getStoredWhatsAppConfig().phone ? formatPhoneForDisplay(getStoredWhatsAppConfig().phone) : 'Não definido'}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleExportFullBackup}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            <Download className="w-4 h-4 text-slate-400" />
+                            <span>Salvar Backup Completo (.json)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => backupInputRef.current?.click()}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            <Upload className="w-4 h-4 text-slate-400" />
+                            <span>Restaurar Backup (.json)</span>
+                          </button>
+
+                          <div className="my-1 border-t border-slate-800/60" />
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowHeaderMenu(false);
+                              handleInstallPwa();
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-indigo-400 font-medium"
+                          >
+                            <Smartphone className="w-4 h-4" />
+                            <span>{isStandalone ? 'App Instalado (PWA)' : 'Instalar NoteOn no Celular'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowHeaderMenu(false);
+                              handleRequestNotifications();
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-amber-400 font-medium"
+                          >
+                            <Bell className="w-4 h-4" />
+                            <span>
+                              {notificationPermission === 'granted'
+                                ? 'Lembretes Ativados 🔔'
+                                : 'Ativar Lembretes de Estudo'}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowHeaderMenu(false);
+                              setShowExtensionModal(true);
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer text-purple-400 font-medium"
+                          >
+                            <Puzzle className="w-4 h-4" />
+                            <span>Plugin do Navegador (Alt + S)</span>
+                          </button>
+
+                          <div className="my-1 border-t border-slate-800/60" />
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLightMode((v) => !v);
+                              setShowHeaderMenu(false);
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-indigo-600/15 flex items-center gap-2.5 cursor-pointer"
+                          >
+                            {lightMode ? (
+                              <Moon className="w-4 h-4 text-indigo-400" />
+                            ) : (
+                              <Sun className="w-4 h-4 text-amber-400" />
+                            )}
+                            <span>{lightMode ? 'Modo Escuro' : 'Modo Claro'}</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    ref={backupInputRef}
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportFullBackup}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Chronological Timeline or Topic Questions View */}
+            <div className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6">
+              <div className="max-w-3xl mx-auto">
+                {/* Prominent Questions Banner when questions exist and user is in another tab */}
+                {currentTopicQuestions.length > 0 && filterType !== 'questions' && (
+                  <div
+                    onClick={() => setFilterType('questions')}
+                    className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-purple-950/40 via-purple-900/30 to-indigo-950/40 border border-purple-800/50 hover:border-purple-600/80 transition cursor-pointer flex items-center justify-between gap-3 group shadow-sm"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="p-1.5 rounded-xl bg-purple-500/20 text-purple-300 group-hover:scale-105 transition">
+                        <HelpCircle className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold text-purple-200">
+                          Esta aula possui {currentTopicQuestions.length}{' '}
+                          {currentTopicQuestions.length === 1
+                            ? 'questão gerada'
+                            : 'questões geradas'}{' '}
+                          da fala do professor!
+                        </p>
+                        <p className="text-[11px] text-purple-400/80">
+                          Clique para testar e fixar o conteúdo agora
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium shrink-0 transition shadow">
+                      Ver Questões →
+                    </span>
+                  </div>
+                )}
+
+                {filterType === 'questions' ? (
+                  <TopicQuestionsView
+                    questions={currentTopicQuestions}
+                    topicTitle={currentTopic?.title || 'Aula'}
+                    subjectName={currentSubject?.name || 'Disciplina'}
+                    lightMode={lightMode}
+                    isGenerating={isGeneratingQuestions}
+                    hasAudioTranscripts={topicAudiosWithTranscript.length > 0}
+                    onGenerateFromAudios={handleGenerateQuestionsForCurrentTopic}
+                    onUpdateQuestion={handleUpdateQuestion}
+                    onDeleteQuestion={handleDeleteQuestion}
+                    onJumpToAudio={(audioId) => {
+                      setFilterType('all');
+                      setTimeout(() => {
+                        const el = document.getElementById(`timeline-card-${audioId}`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 150);
+                    }}
+                  />
+                ) : filteredTimelineItems.length === 0 ? (
+                  <div
+                    className={`rounded-2xl border border-dashed p-8 sm:p-12 text-center my-6 sm:my-8 ${lightMode
+                        ? 'border-slate-300 text-slate-500'
+                        : 'border-slate-800 text-slate-400'
+                      }`}
+                  >
+                    <Layers className="w-8 h-8 text-indigo-400 mx-auto mb-2 opacity-80" />
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      Linha do tempo vazia
+                    </h3>
+                    <p className="text-xs mt-1">
+                      Use a barra abaixo para digitar notas, tirar fotos ou gravar áudio em ordem cronológica.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 sm:space-y-4">
+                    {filteredTimelineItems.map((item, idx) => {
+                      const isEditing = editingItemId === item.id;
+                      const isMenuOpen = openCardMenuId === item.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          id={`timeline-card-${item.id}`}
+                          className="flex md:gap-4 items-start group w-full"
+                        >
+                          {/* Left Column: Chronological Timestamp (Desktop only) */}
+                          <div className="hidden md:block w-16 md:w-20 shrink-0 pt-3 text-right select-none">
+                            <div className="font-mono text-xs font-semibold text-indigo-400">
+                              {item.timeLabel}
+                            </div>
+                            <div className="font-mono text-[10px] text-slate-500">
+                              #{String(idx + 1).padStart(2, '0')}
+                            </div>
+                          </div>
+
+                          {/* Vertical Timeline Line + Dot (Desktop only) */}
+                          <div className="hidden md:flex flex-col items-center self-stretch pt-4">
+                            <div
+                              className={`w-2.5 h-2.5 rounded-full shrink-0 ${item.type === 'photo'
+                                  ? 'bg-cyan-400'
+                                  : item.type === 'audio'
+                                    ? 'bg-emerald-400'
+                                    : 'bg-indigo-400'
+                                }`}
+                            />
+                            <div className="w-px flex-1 bg-slate-800/80 my-1" />
+                          </div>
+
+                          {/* Right Column / Full Mobile Card */}
+                          <div
+                            className={`w-full flex-1 min-w-0 rounded-xl sm:rounded-2xl border p-3.5 sm:p-4 transition ${highlightItemId === item.id
+                                ? 'ring-2 ring-indigo-500 shadow-xl shadow-indigo-500/30 animate-pulse'
+                                : ''
+                              } ${item.importantForExam
+                                ? lightMode
+                                  ? 'bg-amber-50/60 border-amber-300'
+                                  : 'bg-slate-900/90 border-amber-500/40'
+                                : lightMode
+                                  ? 'bg-white border-slate-200/90'
+                                  : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700/80'
+                              }`}
+                          >
+                            {/* Minimal Card Top Row */}
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                {/* Mobile Timestamp Badge */}
+                                <div className="md:hidden flex items-center gap-1.5 shrink-0">
+                                  <span className="font-mono text-[11px] font-bold text-indigo-400 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 rounded-md">
+                                    #{String(idx + 1).padStart(2, '0')} • {item.timeLabel}
+                                  </span>
+                                </div>
+
+                                <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 truncate">
+                                  {item.type === 'photo' ? (
+                                    <ImageIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                  ) : item.type === 'audio' ? (
+                                    <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  ) : (
+                                    <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                  )}
+                                  <span className="truncate">
+                                    {item.title ||
+                                      (item.type === 'photo'
+                                        ? 'Foto'
+                                        : item.type === 'audio'
+                                          ? 'Gravação de Áudio'
+                                          : 'Anotação')}
+                                  </span>
+                                </span>
+
+                                {item.lectureRelativeTimestamp && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSeekToLectureAudio(item)}
+                                    className="px-2 py-0.5 rounded-md bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-[11px] font-mono flex items-center gap-1 transition cursor-pointer shrink-0"
+                                    title="Ouvir este momento no áudio da aula"
+                                  >
+                                    <Headphones className="w-3 h-3" />
+                                    <span>{item.lectureRelativeTimestamp}</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Minimal Actions: Star + ⋯ Dropdown */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExamStar(item)}
+                                  className={`p-1.5 sm:p-1 rounded-lg transition cursor-pointer ${item.importantForExam
+                                      ? 'text-amber-400'
+                                      : 'text-slate-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-amber-300'
+                                    }`}
+                                  title="Destacar como importante"
+                                >
+                                  <Star
+                                    className={`w-4 h-4 ${item.importantForExam ? 'fill-amber-400' : ''
+                                      }`}
+                                  />
+                                </button>
+
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenCardMenuId(isMenuOpen ? null : item.id)
+                                    }
+                                    className="p-1.5 sm:p-1 rounded-lg text-slate-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-slate-200 transition cursor-pointer"
+                                  >
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </button>
+
+                                  {isMenuOpen && (
+                                    <>
+                                      <div
+                                        onClick={() => setOpenCardMenuId(null)}
+                                        className="fixed inset-0 z-20"
+                                      />
+                                      <div
+                                        className={`absolute right-0 mt-1 w-36 rounded-xl border shadow-xl z-30 py-1 text-xs ${lightMode
+                                            ? 'bg-white border-slate-200 text-slate-700'
+                                            : 'bg-slate-900 border-slate-800 text-slate-200'
+                                          }`}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingItemId(item.id);
+                                            setEditingTitle(item.title || '');
+                                            setEditingContent(item.content);
+                                            setOpenCardMenuId(null);
+                                          }}
+                                          className="w-full px-3 py-1.5 text-left hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <Edit3 className="w-3.5 h-3.5" />
+                                          <span>Editar</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={idx === 0}
+                                          onClick={() => moveItemOrder(item.id, 'up')}
+                                          className="w-full px-3 py-1.5 text-left hover:bg-slate-800 disabled:opacity-40 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <ArrowUp className="w-3.5 h-3.5" />
+                                          <span>Subir</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={
+                                            idx === filteredTimelineItems.length - 1
+                                          }
+                                          onClick={() => moveItemOrder(item.id, 'down')}
+                                          className="w-full px-3 py-1.5 text-left hover:bg-slate-800 disabled:opacity-40 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <ArrowDown className="w-3.5 h-3.5" />
+                                          <span>Descer</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteItem(item.id)}
+                                          className="w-full px-3 py-1.5 text-left hover:bg-rose-500/15 text-rose-400 flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span>Excluir</span>
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Photo Body */}
+                            {item.type === 'photo' && item.mediaDataUrl && (
+                              <div
+                                onClick={() => setActivePhotoItem(item)}
+                                className="relative rounded-xl overflow-hidden border border-slate-800/80 bg-slate-950 max-h-80 flex items-center justify-center cursor-zoom-in my-2"
+                              >
+                                <img
+                                  src={item.mediaDataUrl}
+                                  alt={item.title || 'Foto'}
+                                  className="max-h-80 w-auto object-contain"
+                                />
+                                {item.photoHighlights &&
+                                  item.photoHighlights.length > 0 && (
+                                    <svg
+                                      viewBox="0 0 100 100"
+                                      preserveAspectRatio="none"
+                                      className="absolute inset-0 w-full h-full pointer-events-none"
+                                    >
+                                      {item.photoHighlights.map((st, sIdx) => (
+                                        <polyline
+                                          key={sIdx}
+                                          fill="none"
+                                          stroke={st.color}
+                                          strokeWidth={st.width}
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          points={st.points
+                                            .map((p) => `${p.x},${p.y}`)
+                                            .join(' ')}
+                                        />
+                                      ))}
+                                    </svg>
+                                  )}
+                              </div>
+                            )}
+
+                            {/* Audio Body */}
+                            {item.type === 'audio' && item.mediaDataUrl && (
+                              <div className="my-2">
+                                <AudioPlayerCard
+                                  src={item.mediaDataUrl}
+                                  durationHint={item.audioDurationSeconds}
+                                  waveform={item.audioWaveform}
+                                  accentColor={currentSubject?.color || '#6366f1'}
+                                  title={item.title}
+                                  transcript={item.transcript}
+                                  markers={item.audioMarkers}
+                                  seekRequest={
+                                    audioSeekTarget &&
+                                      audioSeekTarget.audioItemId === item.id
+                                      ? {
+                                        timeSeconds: audioSeekTarget.timeSeconds,
+                                        triggerId: audioSeekTarget.triggerId,
+                                      }
+                                      : null
+                                  }
+                                  onGenerateQuestions={
+                                    item.transcript && item.transcript.trim().length > 15
+                                      ? () => handleGenerateQuestionsForSingleAudio(item)
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                            )}
+
+                            {/* Text or Caption */}
+                            {isEditing ? (
+                              <div className="space-y-2 mt-2 pt-2 border-t border-slate-800">
+                                <input
+                                  type="text"
+                                  value={editingTitle}
+                                  onChange={(e) => setEditingTitle(e.target.value)}
+                                  placeholder="Título (opcional)"
+                                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-xs text-white"
+                                />
+                                <textarea
+                                  rows={3}
+                                  value={editingContent}
+                                  onChange={(e) => setEditingContent(e.target.value)}
+                                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white"
+                                />
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingItemId(null)}
+                                    className="px-3 py-1 rounded-lg bg-slate-800 text-xs text-slate-300 cursor-pointer"
+                                  >
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveItemEdit(item)}
+                                    className="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white cursor-pointer"
+                                  >
+                                    Salvar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              item.content && (
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap text-slate-200 mt-1">
+                                  {item.content}
+                                </p>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sleek Unified Bottom Capture Bar (Fixed thumb-friendly dock on mobile) */}
+            {currentTopic && (
+              <div className="px-3 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shrink-0 bg-slate-950/90 backdrop-blur-md md:bg-transparent border-t border-slate-800/80 md:border-none">
+                <div className="max-w-3xl mx-auto">
+                  {isRecording && (
+                    <div className="mb-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 flex items-center justify-between gap-2 sm:gap-3 shadow-lg">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
+                        <span className="font-mono text-xs font-bold text-white shrink-0">
+                          {formatDuration(recordingSeconds)}
+                        </span>
+                        <div className="flex items-center gap-0.5 h-5 shrink-0">
+                          {liveWaveform.slice(0, 10).map((v, i) => (
+                            <div
+                              key={i}
+                              style={{ height: `${Math.max(20, Math.round(v * 100))}%` }}
+                              className="w-1 bg-rose-400 rounded-full"
+                            />
+                          ))}
+                        </div>
+                        {liveTranscript && (
+                          <span className="text-xs text-rose-200/80 italic truncate hidden sm:inline">
+                            "{liveTranscript}"
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={togglePauseRecording}
+                          className="p-1.5 rounded-lg bg-slate-900/80 text-slate-200 hover:bg-slate-800 cursor-pointer"
+                          title={isPausedRecording ? 'Retomar' : 'Pausar'}
+                        >
+                          {isPausedRecording ? (
+                            <Play className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Pause className="w-3.5 h-3.5 text-amber-400" />
+                          )}
+                        </button>
+
+                        {/* Quick Screen Print while Audio is Recording */}
+                        {screenStream ? (
+                          <button
+                            type="button"
+                            onClick={handleCaptureScreenSnapshot}
+                            disabled={isCapturingScreen}
+                            className="px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer shadow-sm animate-pulse"
+                            title="Tirar print do slide da aula agora (Alt+S)"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-cyan-300" />
+                            <span className="hidden xs:inline">Print Slide (Alt+S)</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleStartScreenShare}
+                            className="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 cursor-pointer border border-slate-700"
+                            title="Conectar tela/slide para tirar prints com 1 clique (ou use o Plugin Alt+S)"
+                          >
+                            <Monitor className="w-3.5 h-3.5 text-indigo-400" />
+                            <span className="hidden xs:inline">Conectar Slide</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={stopAndSaveRecording}
+                          className="px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span className="hidden xs:inline">Salvar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelRecording}
+                          className="p-1.5 rounded-lg text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+                          title="Cancelar"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={handleAddTextNote}
+                    className={`flex items-center gap-1 sm:gap-2 rounded-2xl border p-1.5 sm:p-2 shadow-lg ${lightMode
+                        ? 'bg-white border-slate-200'
+                        : 'bg-slate-900 border-slate-800'
+                      }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setShowCameraModal(true)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer shrink-0"
+                      title="Câmera"
+                    >
+                      <Camera className="w-5 h-5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer shrink-0"
+                      title="Adicionar Foto da Galeria"
+                    >
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={screenStream ? handleCaptureScreenSnapshot : handleStartScreenShare}
+                      className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${screenStream
+                          ? 'text-cyan-300 bg-cyan-950/50 border border-cyan-800/60 hover:bg-cyan-900/60 animate-pulse'
+                          : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/60'
+                        }`}
+                      title={
+                        screenStream
+                          ? 'Tirar Print da Tela Conectada (Alt + S)'
+                          : 'Conectar Tela/Slide para Prints (ou use o Plugin Alt+S)'
+                      }
+                    >
+                      <Monitor className="w-5 h-5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={isRecording ? stopAndSaveRecording : startAudioRecording}
+                      className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${isRecording
+                          ? 'bg-rose-600 text-white animate-pulse'
+                          : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/60'
+                        }`}
+                      title={isRecording ? 'Parar e salvar áudio' : 'Gravar Áudio'}
+                    >
+                      {isRecording ? (
+                        <Square className="w-4 h-4 fill-white" />
                       ) : (
-                        <Pause className="w-3.5 h-3.5 text-amber-400" />
+                        <Mic className="w-5 h-5" />
                       )}
                     </button>
 
-                    {/* Quick Screen Print while Audio is Recording */}
-                    {screenStream ? (
-                      <button
-                        type="button"
-                        onClick={handleCaptureScreenSnapshot}
-                        disabled={isCapturingScreen}
-                        className="px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer shadow-sm animate-pulse"
-                        title="Tirar print do slide da aula agora (Alt+S)"
-                      >
-                        <Camera className="w-3.5 h-3.5 text-cyan-300" />
-                        <span className="hidden xs:inline">Print Slide (Alt+S)</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleStartScreenShare}
-                        className="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 cursor-pointer border border-slate-700"
-                        title="Conectar tela/slide para tirar prints com 1 clique (ou use o Plugin Alt+S)"
-                      >
-                        <Monitor className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="hidden xs:inline">Conectar Slide</span>
-                      </button>
-                    )}
+                    <input
+                      type="text"
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      placeholder="Escreva uma anotação..."
+                      className="flex-1 min-w-0 bg-transparent px-1.5 sm:px-2 py-1.5 text-xs sm:text-sm focus:outline-none"
+                    />
 
                     <button
                       type="button"
-                      onClick={stopAndSaveRecording}
-                      className="px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      onClick={() => setMarkImportant((v) => !v)}
+                      className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${markImportant
+                          ? 'text-amber-400 bg-amber-500/15'
+                          : 'text-slate-500 hover:text-amber-300'
+                        }`}
+                      title="Marcar como importante"
                     >
-                      <Check className="w-3.5 h-3.5" />
-                      <span className="hidden xs:inline">Salvar</span>
+                      <Star
+                        className={`w-4 h-4 ${markImportant ? 'fill-amber-400' : ''}`}
+                      />
                     </button>
+
                     <button
-                      type="button"
-                      onClick={cancelRecording}
-                      className="p-1.5 rounded-lg text-rose-300 hover:bg-rose-500/20 cursor-pointer"
-                      title="Cancelar"
+                      type="submit"
+                      disabled={!noteText.trim()}
+                      className="p-2 sm:p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition cursor-pointer shrink-0"
+                      title="Enviar anotação"
                     >
-                      <X className="w-4 h-4" />
+                      <Send className="w-4 h-4" />
                     </button>
-                  </div>
+                  </form>
                 </div>
-              )}
-
-              <form
-                onSubmit={handleAddTextNote}
-                className={`flex items-center gap-1 sm:gap-2 rounded-2xl border p-1.5 sm:p-2 shadow-lg ${
-                  lightMode
-                    ? 'bg-white border-slate-200'
-                    : 'bg-slate-900 border-slate-800'
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handlePhotoUpload}
-                  className="hidden"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setShowCameraModal(true)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer shrink-0"
-                  title="Câmera"
-                >
-                  <Camera className="w-5 h-5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition cursor-pointer shrink-0"
-                  title="Adicionar Foto da Galeria"
-                >
-                  <ImageIcon className="w-5 h-5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={screenStream ? handleCaptureScreenSnapshot : handleStartScreenShare}
-                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
-                    screenStream
-                      ? 'text-cyan-300 bg-cyan-950/50 border border-cyan-800/60 hover:bg-cyan-900/60 animate-pulse'
-                      : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/60'
-                  }`}
-                  title={
-                    screenStream
-                      ? 'Tirar Print da Tela Conectada (Alt + S)'
-                      : 'Conectar Tela/Slide para Prints (ou use o Plugin Alt+S)'
-                  }
-                >
-                  <Monitor className="w-5 h-5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={isRecording ? stopAndSaveRecording : startAudioRecording}
-                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
-                    isRecording
-                      ? 'bg-rose-600 text-white animate-pulse'
-                      : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/60'
-                  }`}
-                  title={isRecording ? 'Parar e salvar áudio' : 'Gravar Áudio'}
-                >
-                  {isRecording ? (
-                    <Square className="w-4 h-4 fill-white" />
-                  ) : (
-                    <Mic className="w-5 h-5" />
-                  )}
-                </button>
-
-                <input
-                  type="text"
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="Escreva uma anotação..."
-                  className="flex-1 min-w-0 bg-transparent px-1.5 sm:px-2 py-1.5 text-xs sm:text-sm focus:outline-none"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setMarkImportant((v) => !v)}
-                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
-                    markImportant
-                      ? 'text-amber-400 bg-amber-500/15'
-                      : 'text-slate-500 hover:text-amber-300'
-                  }`}
-                  title="Marcar como importante"
-                >
-                  <Star
-                    className={`w-4 h-4 ${markImportant ? 'fill-amber-400' : ''}`}
-                  />
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={!noteText.trim()}
-                  className="p-2 sm:p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition cursor-pointer shrink-0"
-                  title="Enviar anotação"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
+              </div>
+            )}
           </>
         )}
       </main>
@@ -3749,9 +3716,8 @@ export default function App() {
                       type="button"
                       onClick={() => setEditSubjColor(c)}
                       style={{ backgroundColor: c }}
-                      className={`w-6 h-6 rounded-full border-2 transition cursor-pointer ${
-                        editSubjColor === c ? 'border-white scale-110' : 'border-transparent'
-                      }`}
+                      className={`w-6 h-6 rounded-full border-2 transition cursor-pointer ${editSubjColor === c ? 'border-white scale-110' : 'border-transparent'
+                        }`}
                     />
                   ))}
                 </div>
@@ -3949,9 +3915,8 @@ export default function App() {
                       type="button"
                       onClick={() => setNewSubjColor(c)}
                       style={{ backgroundColor: c }}
-                      className={`w-6 h-6 rounded-full border-2 transition cursor-pointer ${
-                        newSubjColor === c ? 'border-white scale-110' : 'border-transparent'
-                      }`}
+                      className={`w-6 h-6 rounded-full border-2 transition cursor-pointer ${newSubjColor === c ? 'border-white scale-110' : 'border-transparent'
+                        }`}
                     />
                   ))}
                 </div>
@@ -4117,11 +4082,10 @@ export default function App() {
       {confirmDialog && confirmDialog.isOpen && (
         <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
           <div
-            className={`border rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl flex flex-col ${
-              lightMode
+            className={`border rounded-t-3xl sm:rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl flex flex-col ${lightMode
                 ? 'bg-white border-slate-200 text-slate-900'
                 : 'bg-slate-900 border-slate-800 text-slate-100'
-            }`}
+              }`}
           >
             <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <div className="flex items-start gap-3.5 mb-4">
@@ -4142,11 +4106,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setConfirmDialog(null)}
-                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition ${
-                  lightMode
+                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition ${lightMode
                     ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
+                  }`}
               >
                 Cancelar
               </button>

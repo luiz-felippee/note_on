@@ -375,14 +375,29 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             );
           }
 
+          const itemTimestamp = Number(clientData.createdAt) || now;
+          const dateObj = new Date(itemTimestamp);
+          const fallbackTimeLabel = dateObj.toLocaleTimeString('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+          const fallbackDateLabel = dateObj.toLocaleDateString('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+          });
+          const fallbackDateIso = dateObj
+            .toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+            .slice(0, 10);
+
           if (!activeTopic) {
             activeTopic = {
               id: `topic-ext-${now + 2}`,
               courseId: activeSubject.courseId || activeCourse.id,
               subjectId: activeSubject.id,
               title: 'Gravações da Extensão',
-              date: new Date(now).toISOString().slice(0, 10),
-              startTime: new Date(now).toLocaleTimeString('pt-BR'),
+              date: fallbackDateIso,
+              startTime: clientData.timeLabel || fallbackTimeLabel,
               studyDurationSeconds: 0,
               createdAt: now + 2,
               updatedAt: now + 2,
@@ -394,10 +409,21 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             );
           }
 
+          let maxOrder = 0;
+          for (const [, entry] of existingMap.entries()) {
+            if (entry.deletedAt || entry.entityType !== 'items') continue;
+            try {
+              const p = JSON.parse(entry.data);
+              if (p.topicId === activeTopic.id && typeof p.orderIndex === 'number' && p.orderIndex < 1000000) {
+                if (p.orderIndex > maxOrder) maxOrder = p.orderIndex;
+              }
+            } catch (_) {}
+          }
+
           const isAudio = clientData.captureType === 'audio';
           const itemId =
             clientData.itemId ||
-            `${isAudio ? 'rec' : 'print'}-${now}-${Math.random().toString(36).slice(2, 7)}`;
+            `${isAudio ? 'rec' : 'print'}-${itemTimestamp}-${Math.random().toString(36).slice(2, 7)}`;
           const rawDataUrl: string = clientData.dataUrl;
           let storedMediaField = rawDataUrl;
 
@@ -406,22 +432,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             storedMediaField = EXTERNAL_MEDIA_MARKER;
           }
 
-          const dateObj = new Date(now);
           const newItem: any = {
             id: itemId,
             topicId: activeTopic.id,
             subjectId: activeTopic.subjectId || activeSubject.id,
             courseId: activeTopic.courseId || activeSubject.courseId || activeCourse.id,
             type: isAudio ? 'audio' : 'photo',
-            createdAt: now,
+            createdAt: itemTimestamp,
             updatedAt: now,
-            timeLabel: dateObj.toLocaleTimeString('pt-BR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            }),
-            dateLabel: dateObj.toLocaleDateString('pt-BR'),
-            orderIndex: now,
+            timeLabel: clientData.timeLabel || fallbackTimeLabel,
+            dateLabel: clientData.dateLabel || fallbackDateLabel,
+            orderIndex: maxOrder + 1,
             title:
               clientData.pageTitle
                 ? `${isAudio ? 'Áudio' : 'Print'}: ${String(clientData.pageTitle).slice(0, 50)}`

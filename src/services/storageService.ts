@@ -362,20 +362,41 @@ export async function deleteTopicAndItems(topicId: string): Promise<void> {
   await db.delete('topics', topicId);
 }
 
+function normalizeItemLocalTime(item: TimelineItem): TimelineItem {
+  if (!item || !item.id || item.id.startsWith('item-demo-') || !item.createdAt) {
+    return item;
+  }
+  const d = new Date(item.createdAt);
+  if (isNaN(d.getTime())) return item;
+  return {
+    ...item,
+    timeLabel: d.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+    dateLabel: d.toLocaleDateString('pt-BR'),
+  };
+}
+
 // Timeline Items CRUD Operations
 export async function getItemsByTopic(topicId: string): Promise<TimelineItem[]> {
   const db = await getLocalDB();
   const list: TimelineItem[] = await db.getAllFromIndex('items', 'by-topic', topicId);
-  return list.sort((a, b) => {
-    if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex;
-    return a.createdAt - b.createdAt;
-  });
+  return list
+    .map(normalizeItemLocalTime)
+    .sort((a, b) => {
+      const orderA = a.orderIndex && a.orderIndex < 1000000 ? a.orderIndex : 0;
+      const orderB = b.orderIndex && b.orderIndex < 1000000 ? b.orderIndex : 0;
+      if (orderA > 0 && orderB > 0 && orderA !== orderB) return orderA - orderB;
+      return a.createdAt - b.createdAt;
+    });
 }
 
 export async function getAllItems(): Promise<TimelineItem[]> {
   const db = await getLocalDB();
   const list: TimelineItem[] = await db.getAll('items');
-  return list.sort((a, b) => a.createdAt - b.createdAt);
+  return list.map(normalizeItemLocalTime).sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function saveTimelineItem(item: TimelineItem): Promise<TimelineItem> {
@@ -558,8 +579,27 @@ export async function saveMergedCloudData(data: {
         localMatch.mediaDataUrl.startsWith('data:')
           ? localMatch.mediaDataUrl
           : cloudItem.mediaDataUrl;
+
+      // Garantir que o horário exibido (timeLabel / dateLabel) use sempre o fuso horário local exato do momento em que foi criado
+      const isDemo = DEMO_IDS.has(cloudItem.id);
+      const exactDate = cloudItem.createdAt ? new Date(cloudItem.createdAt) : null;
+      const normalizedTimeLabel =
+        !isDemo && exactDate && !isNaN(exactDate.getTime())
+          ? exactDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })
+          : cloudItem.timeLabel;
+      const normalizedDateLabel =
+        !isDemo && exactDate && !isNaN(exactDate.getTime())
+          ? exactDate.toLocaleDateString('pt-BR')
+          : cloudItem.dateLabel;
+
       return {
         ...cloudItem,
+        timeLabel: normalizedTimeLabel,
+        dateLabel: normalizedDateLabel,
         mediaDataUrl: preservedMedia,
         syncStatus: 'synced' as const,
       };

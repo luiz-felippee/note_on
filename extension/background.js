@@ -63,7 +63,7 @@ async function ensureCloudToken() {
         });
         return { token: res.token, user, apiBase };
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   return { token: null, user: null, apiBase: DEFAULT_CLOUD_API_BASE };
@@ -108,11 +108,18 @@ async function flushPendingToCloud() {
 
   const remainingCaptures = [];
   for (const cap of pendingCaptures) {
+    const capTime = cap.capturedAt || Date.now();
+    const d = new Date(capTime);
     const ok = await uploadDirectToCloud({
-      itemId: cap.itemId || `print-${cap.capturedAt || Date.now()}`,
+      itemId: cap.itemId || `print-${capTime}`,
       captureType: 'photo',
       dataUrl: cap.dataUrl,
       pageTitle: cap.pageTitle || 'Slide da Aula',
+      createdAt: capTime,
+      timeLabel:
+        cap.timeLabel ||
+        d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      dateLabel: cap.dateLabel || d.toLocaleDateString('pt-BR'),
     });
     if (ok) uploadedCount++;
     else remainingCaptures.push(cap);
@@ -120,13 +127,20 @@ async function flushPendingToCloud() {
 
   const remainingAudios = [];
   for (const aud of pendingAudios) {
+    const recTime = aud.recordedAt || Date.now();
+    const d = new Date(recTime);
     const ok = await uploadDirectToCloud({
-      itemId: aud.itemId || `rec-${aud.recordedAt || Date.now()}`,
+      itemId: aud.itemId || `rec-${recTime}`,
       captureType: 'audio',
       dataUrl: aud.dataUrl,
       duration: aud.duration,
       transcript: aud.transcript,
       pageTitle: aud.pageTitle || 'Áudio da Aula (Extensão)',
+      createdAt: recTime,
+      timeLabel:
+        aud.timeLabel ||
+        d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      dateLabel: aud.dateLabel || d.toLocaleDateString('pt-BR'),
     });
     if (ok) uploadedCount++;
     else remainingAudios.push(aud);
@@ -143,12 +157,21 @@ async function flushPendingToCloud() {
 // Forward screenshot dataUrl to NoteOn (Both Cloud D1 + Open Tab)
 async function forwardToNoteOn(dataUrl, pageTitle) {
   const now = Date.now();
+  const dateObj = new Date(now);
+  const timeLabel = dateObj.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const dateLabel = dateObj.toLocaleDateString('pt-BR');
   const sharedItemId = `print-${now}-${Math.random().toString(36).slice(2, 7)}`;
   const capturePayload = {
     itemId: sharedItemId,
     dataUrl,
     pageTitle: pageTitle || 'Slide da Aula',
     capturedAt: now,
+    timeLabel,
+    dateLabel,
   };
 
   // 1. Sobe SEMPRE direto para a Nuvem se estiver logado (garante aparecer em outros computadores na hora!)
@@ -157,6 +180,9 @@ async function forwardToNoteOn(dataUrl, pageTitle) {
     captureType: 'photo',
     dataUrl,
     pageTitle: capturePayload.pageTitle,
+    createdAt: now,
+    timeLabel,
+    dateLabel,
   });
 
   // 2. Também entrega instantaneamente caso haja aba do NoteOn aberta neste computador
@@ -187,7 +213,7 @@ async function forwardToNoteOn(dataUrl, pageTitle) {
           deliveredDirectly = true;
           break;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -228,6 +254,13 @@ async function forwardToNoteOn(dataUrl, pageTitle) {
 // Forward recorded audio to NoteOn (Both Cloud D1 + Open Tab)
 async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
   const now = Date.now();
+  const dateObj = new Date(now);
+  const timeLabel = dateObj.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const dateLabel = dateObj.toLocaleDateString('pt-BR');
   const sharedItemId = `rec-${now}-${Math.random().toString(36).slice(2, 7)}`;
   const audioPayload = {
     itemId: sharedItemId,
@@ -236,6 +269,8 @@ async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
     transcript,
     pageTitle: pageTitle || 'Áudio da Aula (Extensão)',
     recordedAt: now,
+    timeLabel,
+    dateLabel,
   };
 
   // 1. Sobe SEMPRE direto para a Nuvem se estiver logado (garante aparecer em outros computadores na hora!)
@@ -246,6 +281,9 @@ async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
     duration,
     transcript,
     pageTitle: audioPayload.pageTitle,
+    createdAt: now,
+    timeLabel,
+    dateLabel,
   });
 
   // 2. Também entrega instantaneamente caso haja aba do NoteOn aberta neste computador
@@ -276,7 +314,7 @@ async function forwardAudioToNoteOn(dataUrl, duration, transcript, pageTitle) {
           deliveredDirectly = true;
           break;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
