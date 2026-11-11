@@ -31,6 +31,7 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
   onGenerateQuestions,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [resolvedSrc, setResolvedSrc] = useState<string>(src);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(durationHint || 0);
@@ -40,16 +41,67 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
 
   const bars = waveform && waveform.length > 8 ? waveform : DEFAULT_WAVEFORM;
 
+  // Converte data URLs de áudio (inclusive audio/webm;codecs=opus) em Blob URL nativo para reprodução 100% confiável
+  useEffect(() => {
+    if (!src || !src.startsWith('data:')) {
+      setResolvedSrc(src);
+      return;
+    }
+
+    let objectUrl: string | null = null;
+    try {
+      const commaIdx = src.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = src.slice(0, commaIdx).toLowerCase();
+        const base64Data = src.slice(commaIdx + 1).trim();
+        let mime = 'audio/webm';
+        if (header.includes('audio/wav') || header.includes('audio/x-wav')) {
+          mime = 'audio/wav';
+        } else if (header.includes('audio/mp4') || header.includes('audio/aac')) {
+          mime = 'audio/mp4';
+        } else if (header.includes('audio/mpeg') || header.includes('audio/mp3')) {
+          mime = 'audio/mpeg';
+        } else if (header.includes('audio/ogg')) {
+          mime = 'audio/ogg';
+        }
+
+        const binaryStr = atob(base64Data);
+        const len = binaryStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: mime });
+        objectUrl = URL.createObjectURL(blob);
+        setResolvedSrc(objectUrl);
+      } else {
+        setResolvedSrc(src);
+      }
+    } catch {
+      setResolvedSrc(src);
+    }
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [src]);
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const onLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration)) {
+      if (audio.duration && isFinite(audio.duration) && audio.duration > 0) {
         setDuration(audio.duration);
+      } else if (durationHint > 0) {
+        setDuration(durationHint);
       }
     };
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
     const onEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
@@ -57,14 +109,18 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
 
     return () => {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
     };
-  }, [src]);
+  }, [resolvedSrc, durationHint]);
 
   useEffect(() => {
     if (!seekRequest || !audioRef.current) return;
@@ -143,7 +199,7 @@ export const AudioPlayerCard: React.FC<AudioPlayerCardProps> = ({
           : 'border-slate-800/80'
       }`}
     >
-      <audio ref={audioRef} src={src} preload="metadata" />
+      <audio ref={audioRef} src={resolvedSrc} preload="metadata" />
       <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
         <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
           <button

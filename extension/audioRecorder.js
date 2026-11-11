@@ -1,22 +1,25 @@
-// NoteOn Chrome Extension - Floating Audio Recorder Script
-// Injected into any active webpage (Meet, Zoom, YouTube, Slides, etc.) to record lecture audio with a draggable floating stop button.
+// NoteOn Chrome Extension - Floating Audio Recorder Script (v1.5.0)
+// Records lecture audio (from microphone and/or tab video/audio) and syncs directly to NoteOn Cloud & Open Tab.
 
 (function () {
-  // If already recording, toggle or bring to attention
+  // If already recording on this page, pressing Alt+R or clicking the popup button again stops & saves!
   const existing = document.getElementById('noteon-floating-audio-recorder');
   if (existing) {
-    existing.style.transform = 'scale(1.08)';
-    setTimeout(() => {
-      existing.style.transform = 'scale(1)';
-    }, 200);
+    const stopBtn = existing.querySelector('#noteon-btn-stop');
+    if (stopBtn) {
+      stopBtn.click();
+    } else {
+      existing.remove();
+    }
     return;
   }
 
   let mediaRecorder = null;
-  let audioStream = null;
+  let micStream = null;
+  let combinedStream = null;
   let audioChunks = [];
-  let startTime = 0;
-  let elapsedTime = 0;
+  let accumulatedSeconds = 0;
+  let lastResumeTime = 0;
   let timerInterval = null;
   let isPaused = false;
   let recognition = null;
@@ -25,70 +28,149 @@
   let analyser = null;
   let animFrame = null;
 
-  // 1. Request microphone access
-  navigator.mediaDevices
-    .getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    })
-    .then((stream) => {
-      audioStream = stream;
-      startRecording(stream);
-    })
-    .catch((err) => {
-      console.error('Erro ao acessar microfone:', err);
-      showPermissionErrorToast(err.message);
-    });
+  // Try to capture audio from any active <video> or <audio> element on the page
+  function getPageMediaAudioTracks() {
+    const tracks = [];
+    try {
+      const mediaElements = document.querySelectorAll('video, audio');
+      mediaElements.forEach((el) => {
+        try {
+          const stream =
+            typeof el.captureStream === 'function'
+              ? el.captureStream()
+              : typeof el.mozCaptureStream === 'function'
+                ? el.mozCaptureStream()
+                : null;
+          if (stream) {
+            stream.getAudioTracks().forEach((t) => {
+              if (t.readyState === 'live') tracks.push(t);
+            });
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+    return tracks;
+  }
 
-  function showPermissionErrorToast(msg) {
+  async function initAudioCapture() {
+    let userMicStream = null;
+
+    // 1. Request microphone with echoCancellation=false and noiseSuppression=false
+    // so it captures lectures playing from another computer or speakers without muting them
+    try {
+      userMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+        },
+      });
+    } catch (_) {
+      try {
+        userMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        console.warn('Microfone indisponível, tentando áudio da aba:', err);
+      }
+    }
+
+    micStream = userMicStream;
+    const pageTracks = getPageMediaAudioTracks();
+
+    if (!userMicStream && pageTracks.length === 0) {
+      showPermissionErrorToast();
+      return;
+    }
+
+    // Mix microphone + page media if both exist, or use whichever is available
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        audioContext = new AudioCtx();
+        const dest = audioContext.createMediaStreamDestination();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 64;
+
+        if (userMicStream && userMicStream.getAudioTracks().length > 0) {
+          const micSource = audioContext.createMediaStreamSource(userMicStream);
+          micSource.connect(analyser);
+          micSource.connect(dest);
+        }
+
+        if (pageTracks.length > 0) {
+          const pageStream = new MediaStream(pageTracks);
+          const pageSource = audioContext.createMediaStreamSource(pageStream);
+          pageSource.connect(analyser);
+          pageSource.connect(dest);
+        }
+
+        if (dest.stream.getAudioTracks().length > 0) {
+          combinedStream = dest.stream;
+        }
+      }
+    } catch (_) {}
+
+    if (!combinedStream) {
+      combinedStream = userMicStream || new MediaStream(pageTracks);
+    }
+
+    startRecording(combinedStream);
+  }
+
+  function showPermissionErrorToast() {
+    try {
+      chrome.runtime.sendMessage({ action: 'CLEAR_AUDIO_BADGE' });
+    } catch (_) {}
+
     const toast = document.createElement('div');
-    toast.style.position = 'fixed';
-    toast.style.top = '20px';
-    toast.style.left = '50%';
-    toast.style.transform = 'translateX(-50%)';
-    toast.style.zIndex = '2147483647';
-    toast.style.background = '#1e1b4b';
-    toast.style.color = '#f8fafc';
-    toast.style.padding = '12px 20px';
-    toast.style.borderRadius = '16px';
-    toast.style.border = '1px solid rgba(239, 68, 68, 0.5)';
-    toast.style.boxShadow = '0 20px 40px rgba(0,0,0,0.6)';
-    toast.style.fontSize = '12px';
-    toast.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    toast.style.display = 'flex';
-    toast.style.alignItems = 'center';
-    toast.style.gap = '10px';
+    toast.style.cssText =
+      'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1e1b4b;color:#f8fafc;padding:12px 20px;border-radius:16px;border:1px solid rgba(239,68,68,0.5);box-shadow:0 20px 40px rgba(0,0,0,0.6);font-size:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;gap:10px;';
     toast.innerHTML = `
-      <span>⚠️ <strong>Acesso ao microfone bloqueado:</strong> Autorize o microfone no ícone de cadeado do navegador para gravar.</span>
-      <button style="background: transparent; color: #94a3b8; border: none; font-size: 16px; cursor: pointer;" onclick="this.parentElement.remove()">✕</button>
+      <span>⚠️ <strong>Microfone bloqueado:</strong> Autorize o microfone no ícone de cadeado ao lado da URL do navegador para gravar o áudio.</span>
     `;
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText =
+      'background:transparent;color:#94a3b8;border:none;font-size:16px;cursor:pointer;';
+    closeBtn.onclick = () => toast.remove();
+    toast.appendChild(closeBtn);
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 7000);
+    setTimeout(() => toast.remove(), 6500);
+  }
+
+  function getElapsedSeconds() {
+    if (isPaused) return accumulatedSeconds;
+    return accumulatedSeconds + Math.floor((Date.now() - lastResumeTime) / 1000);
   }
 
   function startRecording(stream) {
-    startTime = Date.now();
+    accumulatedSeconds = 0;
+    lastResumeTime = Date.now();
     audioChunks = [];
 
-    // MediaRecorder
-    let mimeType = 'audio/webm';
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-      mimeType = 'audio/webm;codecs=opus';
-    } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-      mimeType = 'audio/mp4';
+    let recorderOptions = { audioBitsPerSecond: 32000 };
+    if (typeof MediaRecorder.isTypeSupported === 'function') {
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 32000 };
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 32000 };
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 32000 };
+      }
     }
 
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    try {
+      mediaRecorder = new MediaRecorder(stream, recorderOptions);
+    } catch (_) {
+      mediaRecorder = new MediaRecorder(stream);
+    }
+
     mediaRecorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) {
         audioChunks.push(e.data);
       }
     };
 
-    mediaRecorder.start(500); // chunk every 500ms
+    mediaRecorder.start(400);
 
     // Web Speech API for real-time transcription
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -113,7 +195,7 @@
             const currentText = (liveTranscript + interim).trim();
             if (currentText) {
               previewEl.style.display = 'block';
-              previewEl.textContent = `"${currentText.slice(-60)}..."`;
+              previewEl.textContent = `"${currentText.slice(-55)}..."`;
             }
           }
         };
@@ -131,30 +213,14 @@
       } catch (_) {}
     }
 
-    // Audio Visualizer Analyser
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        audioContext = new AudioCtx();
-        const source = audioContext.createMediaStreamSource(stream);
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 64;
-        source.connect(analyser);
-      }
-    } catch (_) {}
-
-    // Build Floating Widget
     buildFloatingWidget();
 
-    // Start Timer
     timerInterval = setInterval(() => {
       if (!isPaused) {
-        elapsedTime = Math.floor((Date.now() - startTime) / 1000);
-        updateTimerDisplay(elapsedTime);
+        updateTimerDisplay(getElapsedSeconds());
       }
-    }, 1000);
+    }, 500);
 
-    // Audio wave animation
     animateBars();
   }
 
@@ -167,12 +233,9 @@
   function updateTimerDisplay(secs) {
     const el = document.getElementById('noteon-record-timer');
     if (el) el.textContent = formatTime(secs);
-    const miniEl = document.getElementById('noteon-mini-timer');
-    if (miniEl) miniEl.textContent = formatTime(secs);
   }
 
   function buildFloatingWidget() {
-    // Inject style for pulses and transitions
     const styleId = 'noteon-recorder-styles';
     if (!document.getElementById(styleId)) {
       const style = document.createElement('style');
@@ -183,205 +246,105 @@
           70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
           100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
-        @keyframes noteon-bar-pulse {
-          0%, 100% { height: 4px; }
-          50% { height: 16px; }
-        }
       `;
       document.head.appendChild(style);
     }
 
     const container = document.createElement('div');
     container.id = 'noteon-floating-audio-recorder';
-    container.style.position = 'fixed';
-    container.style.bottom = '24px';
-    container.style.right = '24px';
-    container.style.zIndex = '2147483647';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.gap = '8px';
-    container.style.background = '#090d16';
-    container.style.color = '#f8fafc';
-    container.style.borderRadius = '20px';
-    container.style.border = '1px solid rgba(99, 102, 241, 0.45)';
-    container.style.boxShadow = '0 20px 45px rgba(0, 0, 0, 0.75), 0 0 20px rgba(99, 102, 241, 0.25)';
-    container.style.padding = '12px 16px';
-    container.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    container.style.userSelect = 'none';
-    container.style.cursor = 'grab';
-    container.style.transition = 'transform 0.15s ease, opacity 0.2s ease';
-    container.style.maxWidth = '380px';
-    container.style.minWidth = '290px';
+    container.style.cssText =
+      'position:fixed;bottom:20px;right:20px;z-index:2147483647;display:flex;flex-direction:column;gap:6px;background:#090d16;color:#f8fafc;border-radius:16px;border:1px solid rgba(99,102,241,0.45);box-shadow:0 16px 36px rgba(0,0,0,0.75);padding:10px 14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;user-select:none;cursor:grab;max-width:340px;';
 
     container.innerHTML = `
-      <!-- Header row with drag handle & controls -->
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div id="noteon-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444; animation: noteon-red-pulse 1.6s infinite;"></div>
-          <span style="font-size: 12px; font-weight: 700; color: #f8fafc; letter-spacing: -0.2px;">NoteOn Gravador</span>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 7px;">
+          <div id="noteon-dot" style="width: 9px; height: 9px; border-radius: 50%; background: #ef4444; animation: noteon-red-pulse 1.6s infinite;"></div>
           <span id="noteon-record-timer" style="font-size: 13px; font-family: monospace; font-weight: 700; color: #a5b4fc; background: #1e1b4b; padding: 2px 7px; border-radius: 6px; border: 1px solid rgba(129,140,248,0.3);">00:00</span>
+          <div style="display: flex; align-items: center; gap: 2px; height: 16px;">
+            <div class="noteon-wave-bar" style="width: 3px; height: 6px; background: #34d399; border-radius: 2px;"></div>
+            <div class="noteon-wave-bar" style="width: 3px; height: 12px; background: #34d399; border-radius: 2px;"></div>
+            <div class="noteon-wave-bar" style="width: 3px; height: 15px; background: #34d399; border-radius: 2px;"></div>
+            <div class="noteon-wave-bar" style="width: 3px; height: 8px; background: #34d399; border-radius: 2px;"></div>
+          </div>
         </div>
 
-        <!-- Audio visualizer bars -->
-        <div style="display: flex; align-items: center; gap: 2px; height: 18px;">
-          <div class="noteon-wave-bar" style="width: 3px; height: 6px; background: #818cf8; border-radius: 2px;"></div>
-          <div class="noteon-wave-bar" style="width: 3px; height: 12px; background: #818cf8; border-radius: 2px;"></div>
-          <div class="noteon-wave-bar" style="width: 3px; height: 16px; background: #818cf8; border-radius: 2px;"></div>
-          <div class="noteon-wave-bar" style="width: 3px; height: 8px; background: #818cf8; border-radius: 2px;"></div>
-        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <button type="button" id="noteon-btn-pause" title="Pausar / Retomar" style="background: #1e293b; color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 5px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center;">
+            ⏸️
+          </button>
 
-        <!-- Header actions -->
-        <div style="display: flex; align-items: center; gap: 4px;">
-          <button id="noteon-btn-minimize" title="Minimizar (ocultar da tela)" style="background: transparent; color: #94a3b8; border: none; font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 4px;">_</button>
-          <button id="noteon-btn-cancel" title="Cancelar e descartar áudio" style="background: transparent; color: #94a3b8; border: none; font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 4px;">✕</button>
+          <button type="button" id="noteon-btn-stop" title="Parar e Salvar no NoteOn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; border: none; padding: 6px 12px; border-radius: 10px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);">
+            ⏹️ Salvar Áudio
+          </button>
+
+          <button type="button" id="noteon-btn-cancel" title="Fechar e descartar gravação" style="background: transparent; color: #94a3b8; border: none; font-size: 14px; cursor: pointer; padding: 2px 5px; border-radius: 4px;">
+            ✕
+          </button>
         </div>
       </div>
 
-      <!-- Live transcript snippet preview -->
-      <div id="noteon-transcript-preview" style="display: none; font-size: 10px; color: #94a3b8; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 3px 6px; background: rgba(30, 41, 59, 0.5); border-radius: 6px;"></div>
-
-      <!-- Action buttons row -->
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px;">
-        <button id="noteon-btn-snip" title="Marcar e recortar a área exata do slide (Alt + S)" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #ffffff; border: none; padding: 7px 11px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35); transition: all 0.15s ease;">
-          <span>📐</span>
-          <span>Marcar Área</span>
-        </button>
-
-        <button id="noteon-btn-pause" style="background: #1e293b; color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 7px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
-          <span>⏸️</span>
-        </button>
-
-        <button id="noteon-btn-stop" style="flex: 1; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff; border: none; padding: 7px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4); transition: all 0.15s ease;">
-          <span style="font-size: 12px;">⏹️</span>
-          <span>Parar e Salvar</span>
-        </button>
-      </div>
-
-      <!-- Mini Pill Mode (Initially hidden) -->
-      <div id="noteon-mini-pill" style="display: none; align-items: center; gap: 6px;">
-        <div style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444; animation: noteon-red-pulse 1.6s infinite;"></div>
-        <span id="noteon-mini-timer" style="font-size: 12px; font-family: monospace; font-weight: bold; color: #818cf8;">00:00</span>
-        <button id="noteon-btn-snip-mini" title="Marcar área do slide (Alt + S)" style="background: #4f46e5; color: white; border: none; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 3px;">
-          <span>📐</span>
-          <span>Print</span>
-        </button>
-        <button id="noteon-btn-stop-mini" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⏹️ Parar</button>
-        <button id="noteon-btn-expand" title="Expandir painel" style="background: transparent; color: #94a3b8; border: none; font-size: 12px; cursor: pointer; padding: 2px;">⤢</button>
-      </div>
+      <div id="noteon-transcript-preview" style="display: none; font-size: 10px; color: #94a3b8; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 6px; background: rgba(30, 41, 59, 0.5); border-radius: 6px;"></div>
     `;
 
     document.body.appendChild(container);
 
-    // Event: Stop Recording
-    const handleStop = () => {
-      finishAndDeliver();
-    };
-
-    container.querySelector('#noteon-btn-stop').addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleStop();
-    });
-
-    container.querySelector('#noteon-btn-stop-mini').addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleStop();
-    });
-
-    // Event: Trigger Area Selection Print (Snipper)
-    const triggerAreaSnip = () => {
-      // Temporarily hide floating recorder during crop selection
-      container.style.opacity = '0';
-      container.style.pointerEvents = 'none';
-
-      chrome.runtime.sendMessage({ action: 'TRIGGER_SNIP_AREA' }, () => {
-        setTimeout(() => {
-          container.style.opacity = '1';
-          container.style.pointerEvents = 'auto';
-        }, 500);
-      });
-    };
-
-    container.querySelector('#noteon-btn-snip').addEventListener('click', (e) => {
-      e.stopPropagation();
-      triggerAreaSnip();
-    });
-
-    container.querySelector('#noteon-btn-snip-mini').addEventListener('click', (e) => {
-      e.stopPropagation();
-      triggerAreaSnip();
-    });
-
-    // Event: Pause / Resume
+    const stopBtn = container.querySelector('#noteon-btn-stop');
     const pauseBtn = container.querySelector('#noteon-btn-pause');
-    pauseBtn.addEventListener('click', (e) => {
+    const cancelBtn = container.querySelector('#noteon-btn-cancel');
+
+    stopBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      if (!isPaused) {
+      finishAndDeliver();
+    });
+
+    pauseBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!mediaRecorder) return;
+      if (!isPaused && mediaRecorder.state === 'recording') {
+        accumulatedSeconds = getElapsedSeconds();
         mediaRecorder.pause();
         isPaused = true;
-        pauseBtn.innerHTML = '<span>▶️ Continuar</span>';
+        pauseBtn.textContent = '▶️';
         pauseBtn.style.color = '#34d399';
-        pauseBtn.style.border = '1px solid rgba(16, 185, 129, 0.4)';
         const dot = container.querySelector('#noteon-dot');
         if (dot) dot.style.animation = 'none';
-      } else {
+      } else if (isPaused && mediaRecorder.state === 'paused') {
+        lastResumeTime = Date.now();
         mediaRecorder.resume();
         isPaused = false;
-        pauseBtn.innerHTML = '<span>⏸️ Pausar</span>';
+        pauseBtn.textContent = '⏸️';
         pauseBtn.style.color = '#fbbf24';
-        pauseBtn.style.border = '1px solid rgba(245, 158, 11, 0.35)';
         const dot = container.querySelector('#noteon-dot');
         if (dot) dot.style.animation = 'noteon-red-pulse 1.6s infinite';
       }
     });
 
-    // Event: Minimize / Expand
-    const fullContentNodes = Array.from(container.children).slice(0, 3);
-    const miniPill = container.querySelector('#noteon-mini-pill');
-
-    const toggleMinimize = (minimize) => {
-      if (minimize) {
-        fullContentNodes.forEach((n) => (n.style.display = 'none'));
-        miniPill.style.display = 'flex';
-        container.style.minWidth = 'auto';
-        container.style.padding = '8px 14px';
-        container.style.borderRadius = '999px';
-      } else {
-        fullContentNodes.forEach((n) => (n.style.display = ''));
-        miniPill.style.display = 'none';
-        container.style.minWidth = '290px';
-        container.style.padding = '12px 16px';
-        container.style.borderRadius = '20px';
-      }
-    };
-
-    container.querySelector('#noteon-btn-minimize').addEventListener('click', (e) => {
+    cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      toggleMinimize(true);
+      try {
+        chrome.runtime.sendMessage({ action: 'CLEAR_AUDIO_BADGE' });
+      } catch (_) {}
+      cleanupAll();
     });
 
-    container.querySelector('#noteon-btn-expand').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleMinimize(false);
-    });
-
-    // Event: Cancel
-    container.querySelector('#noteon-btn-cancel').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (confirm('Deseja realmente cancelar e descartar esta gravação?')) {
-        cleanupAll();
-      }
-    });
-
-    // Draggable functionality
     makeDraggable(container);
   }
 
   function makeDraggable(el) {
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    let pos1 = 0,
+      pos2 = 0,
+      pos3 = 0,
+      pos4 = 0;
     el.onmousedown = dragMouseDown;
 
     function dragMouseDown(e) {
-      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      // Never hijack clicks on buttons or elements inside buttons!
+      if (e.target && e.target.closest && e.target.closest('button, input, a')) {
+        return;
+      }
       e.preventDefault();
       pos3 = e.clientX;
       pos4 = e.clientY;
@@ -398,8 +361,8 @@
       pos4 = e.clientY;
       el.style.bottom = 'auto';
       el.style.right = 'auto';
-      el.style.top = Math.max(10, Math.min(window.innerHeight - 80, el.offsetTop - pos2)) + 'px';
-      el.style.left = Math.max(10, Math.min(window.innerWidth - 300, el.offsetLeft - pos1)) + 'px';
+      el.style.top = Math.max(10, Math.min(window.innerHeight - 70, el.offsetTop - pos2)) + 'px';
+      el.style.left = Math.max(10, Math.min(window.innerWidth - 280, el.offsetLeft - pos1)) + 'px';
     }
 
     function closeDragElement() {
@@ -418,10 +381,10 @@
       analyser.getByteFrequencyData(data);
       const bars = document.querySelectorAll('.noteon-wave-bar');
       if (bars.length >= 4) {
-        bars[0].style.height = Math.max(4, Math.min(18, (data[2] / 255) * 22)) + 'px';
-        bars[1].style.height = Math.max(4, Math.min(18, (data[6] / 255) * 26)) + 'px';
-        bars[2].style.height = Math.max(4, Math.min(18, (data[10] / 255) * 24)) + 'px';
-        bars[3].style.height = Math.max(4, Math.min(18, (data[14] / 255) * 20)) + 'px';
+        bars[0].style.height = Math.max(4, Math.min(16, (data[2] / 255) * 20)) + 'px';
+        bars[1].style.height = Math.max(4, Math.min(16, (data[5] / 255) * 24)) + 'px';
+        bars[2].style.height = Math.max(4, Math.min(16, (data[8] / 255) * 22)) + 'px';
+        bars[3].style.height = Math.max(4, Math.min(16, (data[12] / 255) * 18)) + 'px';
       }
       animFrame = requestAnimationFrame(update);
     };
@@ -429,15 +392,21 @@
   }
 
   function finishAndDeliver() {
+    const finalDuration = Math.max(1, getElapsedSeconds());
     const container = document.getElementById('noteon-floating-audio-recorder');
     if (container) {
       container.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px; color: #34d399; font-weight: 700; font-size: 13px;">
+        <div style="display: flex; align-items: center; gap: 10px; color: #34d399; font-weight: 700; font-size: 12px;">
           <span>⏳</span>
-          <span>Salvando áudio da aula no NoteOn...</span>
+          <span>Sincronizando áudio com sua conta NoteOn...</span>
         </div>
       `;
     }
+
+    // Guaranteed cleanup timer so the widget NEVER stays stuck on screen
+    const forceCleanupTimer = setTimeout(() => {
+      cleanupAll();
+    }, 4500);
 
     if (recognition) {
       try {
@@ -453,57 +422,84 @@
       } catch (_) {}
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-        const reader = new FileReader();
+        try {
+          const cleanMime =
+            mediaRecorder.mimeType && mediaRecorder.mimeType.includes('mp4')
+              ? 'audio/mp4'
+              : 'audio/webm';
+          const audioBlob = new Blob(audioChunks, { type: cleanMime });
+          const reader = new FileReader();
 
-        reader.onloadend = () => {
-          const base64Audio = reader.result;
-          const finalDuration = Math.max(1, Math.round(elapsedTime));
-
-          // Send message to background script for delivery
-          chrome.runtime.sendMessage(
-            {
-              action: 'DELIVER_AUDIO_RECORDING',
-              dataUrl: base64Audio,
-              duration: finalDuration,
-              transcript: liveTranscript.trim(),
-              pageTitle: document.title || 'Áudio da Aula (Extensão)',
-            },
-            (res) => {
-              if (container) {
-                if (res && res.needsCloudLogin && !res.deliveredDirectly) {
-                  container.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 12px;">
-                      <span>⚠️</span>
-                      <span>Áudio na fila! Clique no ícone da extensão NoteOn e faça login para enviar ao outro PC.</span>
-                    </div>
-                  `;
-                  setTimeout(() => cleanupAll(), 4500);
-                } else {
-                  container.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; font-size: 13px;">
-                      <span>☁️✓</span>
-                      <span>Áudio salvo e sincronizado na sua conta NoteOn!</span>
-                    </div>
-                  `;
-                  setTimeout(() => cleanupAll(), 2200);
+          reader.onloadend = () => {
+            const base64Audio = reader.result;
+            try {
+              chrome.runtime.sendMessage(
+                {
+                  action: 'DELIVER_AUDIO_RECORDING',
+                  dataUrl: base64Audio,
+                  duration: finalDuration,
+                  transcript: liveTranscript.trim(),
+                  pageTitle: document.title || 'Áudio da Aula (Extensão)',
+                },
+                (res) => {
+                  if (chrome.runtime.lastError) {
+                    clearTimeout(forceCleanupTimer);
+                    cleanupAll();
+                    return;
+                  }
+                  const activeContainer = document.getElementById('noteon-floating-audio-recorder');
+                  if (activeContainer) {
+                    if (res && res.needsCloudLogin && !res.deliveredDirectly) {
+                      activeContainer.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 11px;">
+                          <span>⚠️</span>
+                          <span>Áudio na fila! Abra o ícone da extensão NoteOn e faça login.</span>
+                        </div>
+                      `;
+                      clearTimeout(forceCleanupTimer);
+                      setTimeout(() => cleanupAll(), 3500);
+                    } else {
+                      activeContainer.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; font-size: 12px;">
+                          <span>☁️✓</span>
+                          <span>Áudio salvo e enviado para o NoteOn!</span>
+                        </div>
+                      `;
+                      clearTimeout(forceCleanupTimer);
+                      setTimeout(() => cleanupAll(), 1600);
+                    }
+                  } else {
+                    clearTimeout(forceCleanupTimer);
+                    cleanupAll();
+                  }
                 }
-              }
+              );
+            } catch (_) {
+              clearTimeout(forceCleanupTimer);
+              cleanupAll();
             }
-          );
+          };
 
-          // Safe fallback cleanup if runtime callback takes too long
-          setTimeout(() => {
-            const el = document.getElementById('noteon-floating-audio-recorder');
-            if (el) cleanupAll();
-          }, 5000);
-        };
+          reader.onerror = () => {
+            clearTimeout(forceCleanupTimer);
+            cleanupAll();
+          };
 
-        reader.readAsDataURL(audioBlob);
+          reader.readAsDataURL(audioBlob);
+        } catch (_) {
+          clearTimeout(forceCleanupTimer);
+          cleanupAll();
+        }
       };
 
-      mediaRecorder.stop();
+      try {
+        mediaRecorder.stop();
+      } catch (_) {
+        clearTimeout(forceCleanupTimer);
+        cleanupAll();
+      }
     } else {
+      clearTimeout(forceCleanupTimer);
       cleanupAll();
     }
   }
@@ -511,11 +507,20 @@
   function cleanupAll() {
     if (timerInterval) clearInterval(timerInterval);
     if (animFrame) cancelAnimationFrame(animFrame);
-    if (audioStream) {
-      audioStream.getTracks().forEach((track) => track.stop());
+    if (micStream) {
+      try {
+        micStream.getTracks().forEach((track) => track.stop());
+      } catch (_) {}
+    }
+    if (combinedStream) {
+      try {
+        combinedStream.getTracks().forEach((track) => track.stop());
+      } catch (_) {}
     }
     if (audioContext) {
-      audioContext.close().catch(() => {});
+      try {
+        audioContext.close().catch(() => {});
+      } catch (_) {}
     }
     if (recognition) {
       try {
@@ -525,5 +530,6 @@
     const container = document.getElementById('noteon-floating-audio-recorder');
     if (container) container.remove();
   }
-})();
 
+  initAudioCapture();
+})();

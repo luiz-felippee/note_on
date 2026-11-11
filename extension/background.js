@@ -386,6 +386,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'CHECK_AUDIO_RECORDING_STATUS') {
+    (async () => {
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab || !activeTab.id) {
+          sendResponse({ isRecording: false });
+          return;
+        }
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: () => Boolean(document.getElementById('noteon-floating-audio-recorder')),
+        });
+        const isRec = Boolean(results && results[0] && results[0].result);
+        sendResponse({ isRecording: isRec });
+      } catch (_) {
+        sendResponse({ isRecording: false });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === 'CLEAR_AUDIO_BADGE') {
+    chrome.action.setBadgeText({ text: '' });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (request.action === 'DELIVER_AUDIO_RECORDING') {
     (async () => {
       chrome.action.setBadgeText({ text: '' });

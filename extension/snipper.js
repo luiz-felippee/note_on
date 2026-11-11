@@ -7,6 +7,12 @@
     document.getElementById('noteon-snip-overlay').remove();
   }
 
+  // Hide floating audio recorder during snipping so it never gets in the way
+  const activeRecorder = document.getElementById('noteon-floating-audio-recorder');
+  if (activeRecorder) {
+    activeRecorder.style.display = 'none';
+  }
+
   const dpr = window.devicePixelRatio || 1;
   let startX = 0;
   let startY = 0;
@@ -86,6 +92,10 @@
   const cleanup = () => {
     window.removeEventListener('keydown', handleKey);
     overlay.remove();
+    const rec = document.getElementById('noteon-floating-audio-recorder');
+    if (rec) {
+      rec.style.display = 'flex';
+    }
   };
 
   const handleKey = (e) => {

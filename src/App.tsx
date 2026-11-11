@@ -211,6 +211,8 @@ export default function App() {
   const skipNextAutoSyncRef = useRef(false);
   const autoSyncTimeoutRef = useRef<any>(null);
   const knownItemIdsRef = useRef<Set<string>>(new Set());
+  const isRecordingRef = useRef(false);
+  const recordingSecondsRef = useRef(0);
 
   const applyCloudDataToState = async (
     cloudData: {
@@ -224,14 +226,14 @@ export default function App() {
     },
     fallbackTimestamp?: number
   ) => {
-    await saveMergedCloudData(cloudData);
+    const merged = await saveMergedCloudData(cloudData);
     skipNextAutoSyncRef.current = true;
 
-    const nextCourses = cloudData.courses || [];
-    const nextSubjects = cloudData.subjects || [];
-    const nextTopics = cloudData.topics || [];
-    const nextItems = cloudData.items || [];
-    const nextQuestions = cloudData.questions || [];
+    const nextCourses = merged.courses;
+    const nextSubjects = merged.subjects;
+    const nextTopics = merged.topics;
+    let nextItems = merged.items;
+    const nextQuestions = merged.questions;
 
     const prevKnownIds = knownItemIdsRef.current;
     const newlyArrivedItems =
@@ -239,6 +241,42 @@ export default function App() {
         ? nextItems.filter((it) => !prevKnownIds.has(it.id))
         : [];
     knownItemIdsRef.current = new Set(nextItems.map((it) => it.id));
+
+    // Se este computador estiver gravando o áudio da aula e chegar um print do outro computador,
+    // vincula automaticamente o print à aula atual e ao minuto exato do áudio!
+    if (isRecordingRef.current && newlyArrivedItems.length > 0 && selectedTopicId && selectedSubjectId) {
+      const recSecs = recordingSecondsRef.current;
+      const linkedAudioId = pendingRecordingSessionIdRef.current || undefined;
+      const updatedItems: TimelineItem[] = [];
+
+      nextItems = nextItems.map((it) => {
+        const isNewPhoto = newlyArrivedItems.some((n) => n.id === it.id && n.type === 'photo');
+        if (!isNewPhoto) return it;
+        const linkedPhoto: TimelineItem = {
+          ...it,
+          topicId: selectedTopicId,
+          subjectId: selectedSubjectId,
+          courseId: selectedCourseId || it.courseId,
+          lectureRelativeTimestamp: `${formatDuration(recSecs)} do áudio`,
+          lectureOffsetSeconds: recSecs,
+          linkedAudioItemId: linkedAudioId,
+          updatedAt: Date.now(),
+          syncStatus: 'local',
+        };
+        updatedItems.push(linkedPhoto);
+        return linkedPhoto;
+      });
+
+      for (const up of updatedItems) {
+        await saveTimelineItem(up);
+      }
+      if (updatedItems.length > 0) {
+        showToast(
+          `📸 Print recebido do outro PC e salvo em ${formatDuration(recSecs)} do áudio!`,
+          'success'
+        );
+      }
+    }
 
     setCourses(nextCourses);
     setSubjects(nextSubjects);
@@ -260,8 +298,8 @@ export default function App() {
       setSelectedSubjectId(null);
     }
 
-    // Se chegou um novo print, áudio ou anotação de outro computador/extensão, abre a aula automaticamente!
-    if (newlyArrivedItems.length > 0) {
+    // Se não estiver gravando localmente e chegou um novo print/áudio de outro computador, abre a aula automaticamente!
+    if (!isRecordingRef.current && newlyArrivedItems.length > 0) {
       const sortedNew = [...newlyArrivedItems].sort(
         (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
       );
@@ -648,6 +686,14 @@ export default function App() {
       setSelectedTopicId(subjTopics[0]?.id || null);
     }
   }, [selectedSubjectId, topics]);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    recordingSecondsRef.current = recordingSeconds;
+  }, [recordingSeconds]);
 
   useEffect(() => {
     if (!isRecording || isPausedRecording) return;
@@ -1350,8 +1396,32 @@ export default function App() {
   const startAudioRecording = async () => {
     if (isRecording) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      let stream: MediaStream;
+      try {
+        // Desativa echoCancellation e noiseSuppression para captar com nitidez a aula tocando em outro computador ou caixa de som
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: true,
+          },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
+      let recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 32000 };
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 32000 };
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 32000 };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 32000 };
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, recorderOptions);
       audioChunksRef.current = [];
       recordedPeaksRef.current = [];
       setLiveTranscript('');
@@ -1447,8 +1517,10 @@ export default function App() {
     }
 
     rec.onstop = () => {
+      const cleanMime =
+        rec.mimeType && rec.mimeType.includes('mp4') ? 'audio/mp4' : 'audio/webm';
       const blob = new Blob(audioChunksRef.current, {
-        type: rec.mimeType || 'audio/webm',
+        type: cleanMime,
       });
       const reader = new FileReader();
       reader.onloadend = async () => {
@@ -1473,6 +1545,7 @@ export default function App() {
           audioWaveform: sampledBars,
         });
         setNoteText('');
+        showToast(`🎙️ Áudio salvo na aula (${formatDuration(finalDuration)})!`, 'success');
 
         // Auto-generate questions on the fly from the teacher speech transcription!
         if (
@@ -1504,6 +1577,11 @@ export default function App() {
       pendingRecordingSessionIdRef.current = null;
     };
 
+    try {
+      if (rec.state === 'recording') {
+        rec.requestData();
+      }
+    } catch {}
     rec.stop();
   };
 

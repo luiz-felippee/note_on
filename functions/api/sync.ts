@@ -134,38 +134,31 @@ async function saveMediaChunks(
   }
 }
 
-async function loadAllMediaForUser(env: Env, userId: string): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
-  if (!env.DB) return result;
-
-  try {
-    const rows = await env.DB.prepare(
-      'SELECT mediaId, dataUrl FROM media_blobs WHERE userId = ? ORDER BY mediaId ASC'
-    )
-      .bind(userId)
-      .all();
-
-    const chunksByEntity = new Map<string, string[]>();
-    for (const r of rows.results || []) {
-      const mId: string = r.mediaId || '';
-      const hashIdx = mId.lastIndexOf('#');
-      const entityId = hashIdx !== -1 ? mId.slice(0, hashIdx) : mId;
-      let list = chunksByEntity.get(entityId);
-      if (!list) {
-        list = [];
-        chunksByEntity.set(entityId, list);
+async function loadMediaForEntity(
+  env: Env,
+  userId: string,
+  entityId: string
+): Promise<string | null> {
+  if (env.DB) {
+    try {
+      const rows = await env.DB.prepare(
+        'SELECT dataUrl FROM media_blobs WHERE userId = ? AND mediaId LIKE ? ORDER BY mediaId ASC'
+      )
+        .bind(userId, `${entityId}#%`)
+        .all();
+      if (rows.results && rows.results.length > 0) {
+        const joined = rows.results.map((r: any) => r.dataUrl || '').join('');
+        if (joined.startsWith('data:')) return joined;
       }
-      list.push(r.dataUrl || '');
-    }
-
-    for (const [entityId, chunks] of chunksByEntity.entries()) {
-      result.set(entityId, chunks.join(''));
-    }
-  } catch (e) {
-    console.warn('Aviso ao ler chunks de mídia do D1:', e);
+    } catch (_) {}
   }
-
-  return result;
+  if (env.NOTEON_KV) {
+    try {
+      const kvVal = await env.NOTEON_KV.get(`noteon:media:${userId}:${entityId}`, 'text');
+      if (kvVal && kvVal.startsWith('data:')) return kvVal;
+    } catch (_) {}
+  }
+  return null;
 }
 
 // Auto-migration helper from legacy userId or KV to canonical D1 userId
@@ -593,8 +586,6 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         .bind(userId)
         .all();
 
-      const mediaMap = await loadAllMediaForUser(env, userId);
-
       const courses: any[] = [];
       const subjects: any[] = [];
       const topics: any[] = [];
@@ -618,11 +609,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         try {
           const parsed = JSON.parse(row.data);
           if (parsed.mediaDataUrl === EXTERNAL_MEDIA_MARKER) {
-            const restoredMedia =
-              mediaMap.get(row.entityId) ||
-              (env.NOTEON_KV
-                ? await env.NOTEON_KV.get(`noteon:media:${userId}:${row.entityId}`, 'text')
-                : null);
+            const restoredMedia = await loadMediaForEntity(env, userId, row.entityId);
             if (restoredMedia) {
               parsed.mediaDataUrl = restoredMedia;
             } else {

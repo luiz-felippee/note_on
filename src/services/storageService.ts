@@ -497,9 +497,26 @@ export async function saveMergedCloudData(data: {
   items?: TimelineItem[];
   questions?: StudyQuestion[];
   deletedIds?: string[];
-}): Promise<void> {
+}): Promise<{
+  courses: Course[];
+  subjects: Subject[];
+  topics: StudyTopic[];
+  items: TimelineItem[];
+  questions: StudyQuestion[];
+}> {
   const db = await getLocalDB();
   const deletedSet = new Set<string>(data.deletedIds || []);
+  const now = Date.now();
+  const DEMO_IDS = new Set([
+    'course-medicina',
+    'course-exatas',
+    'subj-fisiologia',
+    'subj-calculo',
+    'topic-neuro-01',
+    'item-demo-1',
+    'item-demo-2',
+    'item-demo-3',
+  ]);
 
   // 1. Remover do banco local qualquer item explicitamente excluído
   for (const id of deletedSet) {
@@ -514,10 +531,39 @@ export async function saveMergedCloudData(data: {
     } catch (_) {}
   }
 
+  const [localCourses, localSubjects, localTopics, localItems, localQuestions] =
+    await Promise.all([
+      db.getAll('courses'),
+      db.getAll('subjects'),
+      db.getAll('topics'),
+      db.getAll('items'),
+      db.getAll('questions'),
+    ]);
+
+  const localItemMap = new Map<string, TimelineItem>();
+  for (const li of localItems) {
+    if (li && li.id) localItemMap.set(li.id, li);
+  }
+
   const validCourses = (data.courses || []).filter((c) => c && !deletedSet.has(c.id));
   const validSubjects = (data.subjects || []).filter((s) => s && !deletedSet.has(s.id));
   const validTopics = (data.topics || []).filter((t) => t && !deletedSet.has(t.id));
-  const validItems = (data.items || []).filter((i) => i && !deletedSet.has(i.id));
+  const validItems = (data.items || [])
+    .filter((i) => i && !deletedSet.has(i.id))
+    .map((cloudItem) => {
+      const localMatch = localItemMap.get(cloudItem.id);
+      const preservedMedia =
+        (!cloudItem.mediaDataUrl || cloudItem.mediaDataUrl === '__D1_MEDIA__') &&
+        localMatch?.mediaDataUrl &&
+        localMatch.mediaDataUrl.startsWith('data:')
+          ? localMatch.mediaDataUrl
+          : cloudItem.mediaDataUrl;
+      return {
+        ...cloudItem,
+        mediaDataUrl: preservedMedia,
+        syncStatus: 'synced' as const,
+      };
+    });
   const validQuestions = (data.questions || []).filter((q) => q && !deletedSet.has(q.id));
 
   const hasAnyCloudState =
@@ -528,41 +574,75 @@ export async function saveMergedCloudData(data: {
     validItems.length > 0 ||
     validQuestions.length > 0;
 
-  // 2. Se a nuvem possui estado válido, remover itens órfãos locais que não existem na nuvem
+  const courseIds = new Set(validCourses.map((c) => c.id));
+  const subjectIds = new Set(validSubjects.map((s) => s.id));
+  const topicIds = new Set(validTopics.map((t) => t.id));
+  const itemIds = new Set(validItems.map((i) => i.id));
+  const questionIds = new Set(validQuestions.map((q) => q.id));
+
+  // Preservar itens criados localmente nos últimos 90 segundos que ainda estão subindo para a nuvem
+  const isRecentUnsynced = (entity: any) => {
+    if (!entity || !entity.id || deletedSet.has(entity.id) || DEMO_IDS.has(entity.id)) {
+      return false;
+    }
+    const ts = Number(entity.updatedAt || entity.createdAt || 0);
+    return now - ts < 90000;
+  };
+
   if (hasAnyCloudState) {
-    const courseIds = new Set(validCourses.map((c) => c.id));
-    const subjectIds = new Set(validSubjects.map((s) => s.id));
-    const topicIds = new Set(validTopics.map((t) => t.id));
-    const itemIds = new Set(validItems.map((i) => i.id));
-    const questionIds = new Set(validQuestions.map((q) => q.id));
-
-    const [localCourses, localSubjects, localTopics, localItems, localQuestions] =
-      await Promise.all([
-        db.getAllKeys('courses'),
-        db.getAllKeys('subjects'),
-        db.getAllKeys('topics'),
-        db.getAllKeys('items'),
-        db.getAllKeys('questions'),
-      ]);
-
-    for (const k of localCourses) {
-      if (!courseIds.has(String(k))) await db.delete('courses', k);
+    for (const lc of localCourses) {
+      if (!courseIds.has(lc.id)) {
+        if (isRecentUnsynced(lc)) {
+          validCourses.push(lc);
+          courseIds.add(lc.id);
+        } else {
+          await db.delete('courses', lc.id);
+        }
+      }
     }
-    for (const k of localSubjects) {
-      if (!subjectIds.has(String(k))) await db.delete('subjects', k);
+    for (const ls of localSubjects) {
+      if (!subjectIds.has(ls.id)) {
+        if (isRecentUnsynced(ls)) {
+          validSubjects.push(ls);
+          subjectIds.add(ls.id);
+        } else {
+          await db.delete('subjects', ls.id);
+        }
+      }
     }
-    for (const k of localTopics) {
-      if (!topicIds.has(String(k))) await db.delete('topics', k);
+    for (const lt of localTopics) {
+      if (!topicIds.has(lt.id)) {
+        if (isRecentUnsynced(lt)) {
+          validTopics.push(lt);
+          topicIds.add(lt.id);
+        } else {
+          await db.delete('topics', lt.id);
+        }
+      }
     }
-    for (const k of localItems) {
-      if (!itemIds.has(String(k))) await db.delete('items', k);
+    for (const li of localItems) {
+      if (!itemIds.has(li.id)) {
+        if (li.syncStatus === 'local' && isRecentUnsynced(li)) {
+          validItems.push(li);
+          itemIds.add(li.id);
+        } else {
+          await db.delete('items', li.id);
+        }
+      }
     }
-    for (const k of localQuestions) {
-      if (!questionIds.has(String(k))) await db.delete('questions', k);
+    for (const lq of localQuestions) {
+      if (!questionIds.has(lq.id)) {
+        if (isRecentUnsynced(lq)) {
+          validQuestions.push(lq);
+          questionIds.add(lq.id);
+        } else {
+          await db.delete('questions', lq.id);
+        }
+      }
     }
   }
 
-  // 3. Salvar os itens válidos vindos da nuvem
+  // 3. Salvar os itens válidos
   for (const c of validCourses) {
     await db.put('courses', c);
   }
@@ -578,4 +658,12 @@ export async function saveMergedCloudData(data: {
   for (const q of validQuestions) {
     await db.put('questions', q);
   }
+
+  return {
+    courses: validCourses.sort((a, b) => a.createdAt - b.createdAt),
+    subjects: validSubjects.sort((a, b) => a.createdAt - b.createdAt),
+    topics: validTopics.sort((a, b) => b.createdAt - a.createdAt),
+    items: validItems.sort((a, b) => a.createdAt - b.createdAt),
+    questions: validQuestions,
+  };
 }

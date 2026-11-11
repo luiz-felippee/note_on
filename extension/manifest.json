@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "NoteOn - Gravação de Áudio e Captura de Slides",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Grave o áudio da aula com botão flutuante na tela e capture recortes de slides (Meet, Zoom, YouTube, PDF) diretamente para o NoteOn.",
   "permissions": [
     "activeTab",
     "tabs",
     "scripting",
-    "storage"
+    "storage",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "<all_urls>"
