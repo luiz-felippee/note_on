@@ -155,6 +155,10 @@ export function buildLessonContextPrompt(ctx: LessonContext): string {
   const notes = items.filter((i) => i.type === 'text');
 
   let text = `Você é o Tutor de Estudos Inteligente do NoteOn.\n`;
+  text += `REGRAS OBRIGATÓRIAS DE FORMATAÇÃO:\n`;
+  text += `1. Seja CURTO, DIRETO e MUITO BEM ORGANIZADO (use tópicos curtos de 1 linha).\n`;
+  text += `2. NUNCA escreva textos longos ou parágrafos grandes.\n`;
+  text += `3. Se formular perguntas e respostas, faça perguntas de 1 linha e respostas diretas de no máximo 2 linhas.\n\n`;
   text += `Contexto da aula atual:\n`;
   text += `- Disciplina: ${subject?.name || 'Geral'}\n`;
   text += `- Título da Aula: ${topic.title}\n`;
@@ -476,7 +480,16 @@ async function callCloudflareWorkersAi(
   return reply.trim();
 }
 
-// 5. Fallback Local Engine (Offline)
+// 5. Fallback Local Engine (Offline) — Curto, Direto e Bem Organizado
+function cleanSnippet(raw?: string, maxLen = 85): string {
+  if (!raw) return '';
+  const cleaned = raw.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  const cut = cleaned.slice(0, maxLen);
+  const space = cut.lastIndexOf(' ');
+  return `${space > 35 ? cut.slice(0, space) : cut}...`;
+}
+
 function generateLocalStudyAssistantReply(
   userMessage: string,
   ctx: LessonContext
@@ -490,75 +503,69 @@ function generateLocalStudyAssistantReply(
 
   // If user asked for study plan
   if (lower.includes('plano') || lower.includes('cronograma') || lower.includes('estudo')) {
-    let plan = `### 📅 Plano de Estudos Estruturado: ${topic.title}\n`;
-    plan += `**Disciplina:** ${subject?.name || 'Geral'} • **Total de Materiais:** ${audios.length} áudios, ${photos.length} fotos e ${items.length} itens registrados.\n\n`;
+    let plan = `### 📅 Plano de Estudos Objetivo: ${topic.title}\n`;
+    plan += `**Disciplina:** ${subject?.name || 'Geral'} • **Materiais:** ${audios.length} áudios e ${photos.length} fotos\n\n`;
 
-    plan += `#### 🟢 Etapa 1: Assimilação Ativa (Hoje - 30 a 45 min)\n`;
+    plan += `**1. Revisão Rápida (Hoje — 20 min)**\n`;
     if (audios.length > 0) {
-      plan += `1. **Ouvir os trechos-chave dos áudios:**\n`;
-      audios.forEach((a, i) => {
-        plan += `   - **Áudio #${i + 1} (${a.timeLabel}):** Reouvir e validar os termos principais: *${a.transcript?.slice(0, 80) || a.title}*.\n`;
+      audios.slice(0, 3).forEach((a, i) => {
+        plan += `- 🎙️ **Áudio #${i + 1} (${a.timeLabel}):** ${cleanSnippet(a.transcript || a.title, 75)}\n`;
       });
     }
     if (photos.length > 0) {
-      plan += `2. **Revisão dos Slides/Lousas capturados:**\n`;
-      photos.forEach((p, i) => {
-        plan += `   - **Foto #${i + 1} (${p.timeLabel}):** Explicar para si mesmo o diagrama/conteúdo de *${p.title || 'Slide'}*.\n`;
+      photos.slice(0, 3).forEach((p, i) => {
+        plan += `- 📸 **Foto #${i + 1} (${p.timeLabel}):** Revisar *${cleanSnippet(p.title || 'Slide', 50)}*\n`;
       });
     }
-    plan += `\n`;
 
-    plan += `#### 🟡 Etapa 2: Recuperação Ativa SM-2 (D+1 - Amanhã)\n`;
-    plan += `- Sem olhar as anotações, escreva em 1 folha os 3 conceitos fundamentais discutidos nesta aula.\n`;
-    plan += `- Teste seus conhecimentos respondendo às questões de estudo geradas no NoteOn.\n\n`;
-
-    plan += `#### 🟣 Etapa 3: Fixação de Longo Prazo (D+7 e D+14)\n`;
-    plan += `- Foco nos itens marcados com ⭐ **IMPORTANTE PARA A PROVA** (${exams.length} itens destacados).\n`;
-    plan += `- Prática espaçada com os flashcards do NoteOn.\n`;
+    plan += `\n**2. Prática Ativa (Amanhã — 15 min)**\n`;
+    plan += `- ✅ Responder as questões objetivas da aba **Questões**.\n`;
+    plan += `- ⭐ Revisar os **${exams.length} itens marcados para prova**.\n`;
 
     return plan;
   }
 
   // If user asked to organize topics
   if (lower.includes('topico') || lower.includes('tópico') || lower.includes('organizar') || lower.includes('resumo')) {
-    let summary = `### 📌 Síntese dos Tópicos Mais Importantes da Aula\n\n`;
-    summary += `**Aula:** ${topic.title} (${subject?.name || 'Disciplina'})\n\n`;
+    let summary = `### 📌 Resumo Direto: ${topic.title}\n`;
+    summary += `**Disciplina:** ${subject?.name || 'Geral'}\n\n`;
 
     if (audios.length > 0) {
-      summary += `#### 🎙️ Pontos Centrais Abordados pelo Professor (Áudios):\n`;
+      summary += `**🎙️ Ideias-Chave dos Áudios:**\n`;
       audios.forEach((a, i) => {
-        summary += `- **Tópico ${i + 1} [${a.timeLabel}]:** ${a.title || 'Explicação em áudio'}\n`;
-        if (a.transcript) {
-          summary += `  *Trecho da fala:* "${a.transcript}"\n`;
-        }
+        const snippet = cleanSnippet(a.transcript || a.content || a.title, 85);
+        summary += `- **[${a.timeLabel}] Ponto ${i + 1}:** ${snippet}\n`;
       });
       summary += `\n`;
     }
 
     if (photos.length > 0) {
-      summary += `#### 📸 Evidências Visuais e Esquemas de Lousa:\n`;
+      summary += `**📸 Quadros / Slides:**\n`;
       photos.forEach((p, i) => {
-        summary += `- **Slide/Esquema ${i + 1} [${p.timeLabel}]:** ${p.title || 'Esquema gráfico'}\n`;
-        if (p.content) summary += `  *Nota:* ${p.content}\n`;
+        summary += `- **[${p.timeLabel}] Slide ${i + 1}:** ${cleanSnippet(p.title || p.content || 'Imagem capturada', 75)}\n`;
       });
       summary += `\n`;
     }
 
     if (exams.length > 0) {
-      summary += `#### ⭐ Atenção Especial para a Prova:\n`;
+      summary += `**⭐ Destaque de Prova:**\n`;
       exams.forEach((ex) => {
-        summary += `- **[${ex.timeLabel}] ${ex.title || 'Tópico de Prova'}:** ${ex.content || ex.transcript || 'Revisar com prioridade máxima.'}\n`;
+        summary += `- **[${ex.timeLabel}]** ${cleanSnippet(ex.title || ex.content || ex.transcript, 80)}\n`;
       });
     }
 
     return summary;
   }
 
+  const firstTranscript = audios.find((a) => a.transcript)?.transcript;
   return (
-    `Com base nas anotações e áudios da aula **"${topic.title}"**, aqui estão os pontos principais:\n\n` +
-    `• Foram identificados **${audios.length} áudios com falas** e **${photos.length} fotos de lousa** registradas.\n` +
-    (exams.length > 0 ? `• Existem **${exams.length} itens marcados como prioridade de prova**.\n` : '') +
-    `\n💡 **Dica do Tutor:** Você pode clicar nos botões rápidos acima para **"Organizar Tópicos Principais"** ou **"Criar Plano de Estudos da Aula"**, ou fazer qualquer pergunta sobre o conteúdo explicado pelo professor!`
+    `### 💡 Resposta Direta — ${topic.title}\n\n` +
+    (firstTranscript
+      ? `• **Ponto central da aula:** "${cleanSnippet(firstTranscript, 95)}"\n`
+      : '') +
+    `• **Materiais registrados:** ${audios.length} áudio(s) e ${photos.length} foto(s).\n` +
+    (exams.length > 0 ? `• **Prioridade de prova:** ${exams.length} item(ns) destacado(s).\n` : '') +
+    `\n📌 Use os botões acima para **Organizar Tópicos** ou **Plano de Estudos**.`
   );
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   HelpCircle,
   Sparkles,
@@ -15,7 +15,11 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { StudyQuestion } from '../types';
-import { getGeminiApiKey, saveGeminiApiKey } from '../services/questionGeneratorService';
+import {
+  getGeminiApiKey,
+  saveGeminiApiKey,
+  sanitizeAndOrganizeQuestion,
+} from '../services/questionGeneratorService';
 
 interface TopicQuestionsViewProps {
   questions: StudyQuestion[];
@@ -47,13 +51,18 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
   const [apiKeyInput, setApiKeyInput] = useState(getGeminiApiKey());
   const [apiKeySavedSuccess, setApiKeySavedSuccess] = useState(false);
 
-  const filteredQuestions = questions.filter((q) => {
+  // Garante que todas as questões (inclusive as antigas salvas no banco) fiquem curtas e organizadas
+  const organizedQuestions = useMemo(() => {
+    return questions.map((q) => sanitizeAndOrganizeQuestion(q, topicTitle, subjectName));
+  }, [questions, topicTitle, subjectName]);
+
+  const filteredQuestions = organizedQuestions.filter((q) => {
     if (filterType === 'all') return true;
     return q.type === filterType;
   });
 
-  const mcCount = questions.filter((q) => q.type === 'multiple_choice').length;
-  const discCount = questions.filter((q) => q.type === 'discursive').length;
+  const mcCount = organizedQuestions.filter((q) => q.type === 'multiple_choice').length;
+  const discCount = organizedQuestions.filter((q) => q.type === 'discursive').length;
 
   const handleSelectOption = (question: StudyQuestion, optionIndex: number) => {
     onUpdateQuestion({
@@ -95,36 +104,60 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
 
   const hasApiKey = Boolean(getGeminiApiKey());
 
+  const renderStructuredExplanation = (explanation: string) => {
+    const lines = explanation
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    return (
+      <div className="space-y-1.5 mt-1.5">
+        {lines.map((line, idx) => (
+          <div
+            key={idx}
+            className={`text-xs leading-snug rounded-lg px-2.5 py-1.5 ${
+              lightMode
+                ? 'bg-white/80 text-slate-800 border border-slate-200/70'
+                : 'bg-slate-900/70 text-slate-200 border border-slate-800/80'
+            }`}
+          >
+            {line}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header Bar */}
       <div
-        className={`p-4 rounded-2xl border transition shadow-sm ${
+        className={`p-3.5 sm:p-4 rounded-2xl border transition shadow-sm ${
           lightMode
             ? 'bg-white border-slate-200'
             : 'bg-slate-900/90 border-slate-800'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div>
             <div className="flex items-center gap-2">
               <span className="p-1.5 rounded-xl bg-purple-500/20 text-purple-400">
-                <HelpCircle className="w-5 h-5" />
+                <HelpCircle className="w-4 h-4" />
               </span>
               <h2
-                className={`text-base sm:text-lg font-bold ${
+                className={`text-sm sm:text-base font-bold ${
                   lightMode ? 'text-slate-900' : 'text-slate-100'
                 }`}
               >
-                Questões da Aula ({questions.length})
+                Questões Objetivas ({organizedQuestions.length})
               </h2>
             </div>
             <p
-              className={`text-xs mt-1 ${
+              className={`text-[11px] mt-0.5 ${
                 lightMode ? 'text-slate-500' : 'text-slate-400'
               }`}
             >
-              Perguntas geradas a partir da transcrição da fala do professor sobre{' '}
+              Perguntas diretas e gabarito resumido da aula{' '}
               <span className="font-semibold text-purple-400">"{topicTitle}"</span>.
             </p>
           </div>
@@ -133,7 +166,7 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
             <button
               type="button"
               onClick={() => setShowApiKeyModal(true)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-medium flex items-center gap-1.5 border transition cursor-pointer ${
                 hasApiKey
                   ? lightMode
                     ? 'bg-purple-50 border-purple-200 text-purple-700'
@@ -144,25 +177,25 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
               }`}
               title="Configurar chave de inteligência artificial Gemini"
             >
-              <Key className="w-3.5 h-3.5" />
-              <span>{hasApiKey ? 'Gemini IA Conectado' : 'Configurar Gemini (Opcional)'}</span>
+              <Key className="w-3 h-3" />
+              <span>{hasApiKey ? 'IA Conectada' : 'Chave IA'}</span>
             </button>
 
             <button
               type="button"
               onClick={onGenerateFromAudios}
               disabled={isGenerating}
-              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md transition cursor-pointer disabled:opacity-50"
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-sm transition cursor-pointer disabled:opacity-50"
             >
               <Sparkles className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-              <span>{isGenerating ? 'Criando Questões...' : 'Gerar Novas Questões'}</span>
+              <span>{isGenerating ? 'Organizando...' : 'Gerar Questões da Aula'}</span>
             </button>
           </div>
         </div>
 
         {/* Filter Badges */}
-        {questions.length > 0 && (
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-800/40 overflow-x-auto text-xs">
+        {organizedQuestions.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-slate-800/30 overflow-x-auto text-[11px]">
             <button
               type="button"
               onClick={() => setFilterType('all')}
@@ -174,7 +207,7 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
                   : 'text-slate-400 hover:bg-slate-800'
               }`}
             >
-              Todas ({questions.length})
+              Todas ({organizedQuestions.length})
             </button>
             <button
               type="button"
@@ -207,55 +240,54 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
       </div>
 
       {/* Empty State */}
-      {questions.length === 0 && (
+      {organizedQuestions.length === 0 && (
         <div
-          className={`p-8 text-center rounded-2xl border ${
+          className={`p-6 text-center rounded-2xl border ${
             lightMode
               ? 'bg-white border-slate-200'
               : 'bg-slate-900/60 border-slate-800'
           }`}
         >
-          <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-            <HelpCircle className="w-6 h-6" />
+          <div className="w-10 h-10 mx-auto mb-2.5 rounded-2xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+            <HelpCircle className="w-5 h-5" />
           </div>
           <h3
-            className={`text-base font-semibold ${
+            className={`text-sm font-semibold ${
               lightMode ? 'text-slate-800' : 'text-slate-200'
             }`}
           >
-            Nenhuma questão gerada ainda para esta aula
+            Nenhuma questão gerada para esta aula
           </h3>
           <p
             className={`text-xs max-w-md mx-auto mt-1 leading-relaxed ${
               lightMode ? 'text-slate-500' : 'text-slate-400'
             }`}
           >
-            Ao gravar um áudio durante a aula, o sistema transcreve a fala do professor
-            e formula automaticamente perguntas para testar e fixar seu conhecimento!
+            Gere perguntas curtas e diretas a partir dos áudios gravados na aula.
           </p>
 
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <div className="mt-3.5 flex flex-wrap justify-center gap-2">
             {hasAudioTranscripts ? (
               <button
                 type="button"
                 onClick={onGenerateFromAudios}
                 disabled={isGenerating}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-2 shadow cursor-pointer transition disabled:opacity-50"
+                className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer transition disabled:opacity-50"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>{isGenerating ? 'Criando Perguntas...' : 'Gerar Perguntas Desta Aula'}</span>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{isGenerating ? 'Criando Perguntas...' : 'Gerar Perguntas Agora'}</span>
               </button>
             ) : (
               <p className="text-xs text-amber-400/90 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
-                💡 Dica: Grave um áudio pelo botão do microfone abaixo para gerar perguntas!
+                💡 Dica: Grave um áudio da aula para gerar perguntas automáticas!
               </p>
             )}
           </div>
         </div>
       )}
 
-      {/* Questions List */}
-      <div className="space-y-4">
+      {/* Questions List - Compact & Well-Organized Cards */}
+      <div className="space-y-3">
         {filteredQuestions.map((q, qIndex) => {
           const isAnswered = q.userSelectedOption !== undefined;
           const isCorrect = q.userSelectedOption === q.correctOptionIndex;
@@ -263,122 +295,114 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
           return (
             <div
               key={q.id}
-              className={`p-4 sm:p-5 rounded-2xl border transition shadow-sm relative ${
+              className={`p-3.5 sm:p-4 rounded-2xl border transition shadow-sm relative ${
                 lightMode
                   ? 'bg-white border-slate-200 hover:border-slate-300'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700/80'
               }`}
             >
               {/* Question Header */}
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
                   <span
-                    className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider ${
-                      q.type === 'multiple_choice'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                        : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-extrabold ${
+                      lightMode
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-purple-500/20 text-purple-300'
                     }`}
                   >
-                    {q.type === 'multiple_choice' ? 'Múltipla Escolha' : 'Discursiva'}
+                    Q{qIndex + 1}
                   </span>
                   <span
-                    className={`text-xs ${
-                      lightMode ? 'text-slate-400' : 'text-slate-500'
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                      q.type === 'multiple_choice'
+                        ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                        : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
                     }`}
                   >
-                    Questão #{qIndex + 1}
+                    {q.type === 'multiple_choice' ? 'Objetiva' : 'Discursiva'}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1">
-                  {/* Favorite for Exam / Flashcards */}
                   <button
                     type="button"
                     onClick={() => handleToggleImportant(q)}
-                    className={`p-1.5 rounded-lg transition cursor-pointer ${
+                    className={`p-1 rounded-lg transition cursor-pointer ${
                       q.importantForExam
                         ? 'text-amber-400 bg-amber-400/10'
                         : 'text-slate-400 hover:text-amber-300 hover:bg-slate-800/60'
                     }`}
-                    title={
-                      q.importantForExam
-                        ? 'Marcada como importante para revisão'
-                        : 'Marcar para revisão e flashcards'
-                    }
+                    title="Destacar para prova"
                   >
                     <Star
-                      className={`w-4 h-4 ${
+                      className={`w-3.5 h-3.5 ${
                         q.importantForExam ? 'fill-amber-400 text-amber-400' : ''
                       }`}
                     />
                   </button>
 
-                  {/* Reset Answer */}
                   {(isAnswered || q.userRevealedDiscursive) && (
                     <button
                       type="button"
                       onClick={() => handleResetAnswer(q)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition cursor-pointer"
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition cursor-pointer"
                       title="Refazer questão"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                     </button>
                   )}
 
-                  {/* Delete Question */}
                   <button
                     type="button"
                     onClick={() => onDeleteQuestion(q.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                    className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
                     title="Excluir questão"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* Prompt Text */}
+              {/* Concise Question Prompt */}
               <p
-                className={`text-sm sm:text-base font-semibold leading-relaxed ${
+                className={`text-xs sm:text-sm font-semibold leading-snug ${
                   lightMode ? 'text-slate-800' : 'text-slate-100'
                 }`}
               >
                 {q.prompt}
               </p>
 
-              {/* Teacher Quote Excerpt Callout */}
+              {/* Compact 1-Line Teacher Excerpt Pill */}
               {q.teacherQuoteSnippet && (
                 <div
-                  className={`mt-3 p-2.5 rounded-xl text-xs border flex items-start gap-2 ${
+                  className={`mt-2 px-2.5 py-1.5 rounded-lg text-[11px] border flex items-center justify-between gap-2 ${
                     lightMode
-                      ? 'bg-purple-50/70 border-purple-200/80 text-purple-950'
-                      : 'bg-purple-950/20 border-purple-800/40 text-purple-200'
+                      ? 'bg-purple-50/60 border-purple-200/70 text-purple-900'
+                      : 'bg-purple-950/20 border-purple-800/30 text-purple-200/90'
                   }`}
                 >
-                  <Volume2 className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-purple-300 block text-[10px] uppercase tracking-wider mb-0.5">
-                      Fala do Professor em Aula:
-                    </span>
-                    <p className="italic leading-relaxed font-sans">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <Volume2 className="w-3 h-3 text-purple-400 shrink-0" />
+                    <span className="truncate italic">
                       "{q.teacherQuoteSnippet}"
-                    </p>
+                    </span>
                   </div>
                   {q.audioItemId && onJumpToAudio && (
                     <button
                       type="button"
                       onClick={() => onJumpToAudio(q.audioItemId!)}
-                      className="px-2 py-0.5 rounded-md bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-[10px] font-medium transition cursor-pointer whitespace-nowrap self-center"
+                      className="px-2 py-0.5 rounded bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-[10px] font-medium transition cursor-pointer shrink-0"
                     >
-                      Ouvir Áudio
+                      Ouvir
                     </button>
                   )}
                 </div>
               )}
 
-              {/* Multiple Choice Options */}
+              {/* Multiple Choice Options - Short & Balanced */}
               {q.type === 'multiple_choice' && q.options && (
-                <div className="mt-4 space-y-2">
+                <div className="mt-2.5 space-y-1.5">
                   {q.options.map((opt, optIdx) => {
                     const letters = ['A', 'B', 'C', 'D', 'E'];
                     const letter = letters[optIdx] || `${optIdx + 1}`;
@@ -387,17 +411,19 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
 
                     let btnStyle = lightMode
                       ? 'bg-slate-50 border-slate-200 hover:border-purple-300 text-slate-700'
-                      : 'bg-slate-800/60 border-slate-700 hover:border-purple-500/50 text-slate-200';
+                      : 'bg-slate-800/50 border-slate-700/80 hover:border-purple-500/50 text-slate-200';
 
                     if (isAnswered) {
                       if (isTheCorrectOption) {
-                        btnStyle =
-                          'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-500/40';
+                        btnStyle = lightMode
+                          ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                          : 'bg-emerald-500/15 border-emerald-500/60 text-emerald-200';
                       } else if (isSelected && !isTheCorrectOption) {
-                        btnStyle =
-                          'bg-rose-500/20 border-rose-500/60 text-rose-200 ring-1 ring-rose-500/40';
+                        btnStyle = lightMode
+                          ? 'bg-rose-50 border-rose-400 text-rose-900'
+                          : 'bg-rose-500/15 border-rose-500/60 text-rose-200';
                       } else {
-                        btnStyle = 'opacity-40 border-transparent';
+                        btnStyle = 'opacity-45 border-transparent';
                       }
                     }
 
@@ -406,10 +432,10 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
                         key={optIdx}
                         type="button"
                         onClick={() => handleSelectOption(q, optIdx)}
-                        className={`w-full p-3 rounded-xl border text-left text-xs sm:text-sm font-medium transition flex items-start gap-3 cursor-pointer ${btnStyle}`}
+                        className={`w-full py-2 px-2.5 rounded-xl border text-left text-xs font-medium transition flex items-center gap-2.5 cursor-pointer ${btnStyle}`}
                       >
                         <span
-                          className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${
+                          className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 font-bold text-[11px] ${
                             isAnswered && isTheCorrectOption
                               ? 'bg-emerald-600 text-white'
                               : isAnswered && isSelected
@@ -421,12 +447,12 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
                         >
                           {letter}
                         </span>
-                        <span className="flex-1 pt-0.5">{opt}</span>
+                        <span className="flex-1 leading-snug">{opt}</span>
                         {isAnswered && isTheCorrectOption && (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 self-center" />
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         )}
                         {isAnswered && isSelected && !isTheCorrectOption && (
-                          <XCircle className="w-5 h-5 text-rose-400 shrink-0 self-center" />
+                          <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
                         )}
                       </button>
                     );
@@ -434,95 +460,94 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
                 </div>
               )}
 
-              {/* Feedback & Explanation for Multiple Choice */}
+              {/* Concise Structured Answer for Multiple Choice */}
               {q.type === 'multiple_choice' && isAnswered && (
                 <div
-                  className={`mt-3.5 p-3.5 rounded-xl border animate-in fade-in slide-in-from-top-1 ${
+                  className={`mt-2.5 p-2.5 rounded-xl border ${
                     isCorrect
-                      ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
-                      : 'bg-rose-950/20 border-rose-800/40 text-rose-200'
+                      ? lightMode
+                        ? 'bg-emerald-50/70 border-emerald-200'
+                        : 'bg-emerald-950/20 border-emerald-800/40'
+                      : lightMode
+                      ? 'bg-rose-50/70 border-rose-200'
+                      : 'bg-rose-950/20 border-rose-800/40'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 font-bold text-xs mb-1">
+                  <div className="flex items-center gap-1.5 font-bold text-[11px]">
                     {isCorrect ? (
                       <>
-                        <Check className="w-4 h-4 text-emerald-400" />
-                        <span className="text-emerald-300">Resposta Correta! Parabéns!</span>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className={lightMode ? 'text-emerald-700' : 'text-emerald-300'}>
+                          Resposta Correta!
+                        </span>
                       </>
                     ) : (
                       <>
-                        <XCircle className="w-4 h-4 text-rose-400" />
-                        <span className="text-rose-300">
-                          Resposta Incorreta. A alternativa correta é a{' '}
-                          {String.fromCharCode(65 + (q.correctOptionIndex || 0))}.
+                        <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span className={lightMode ? 'text-rose-700' : 'text-rose-300'}>
+                          Incorreta — Gabarito: Alternativa{' '}
+                          {String.fromCharCode(65 + (q.correctOptionIndex || 0))}
                         </span>
                       </>
                     )}
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed font-sans mt-1">
-                    {q.explanation}
-                  </p>
+                  {renderStructuredExplanation(q.explanation)}
                 </div>
               )}
 
               {/* Discursive Question Controls */}
               {q.type === 'discursive' && (
-                <div className="mt-4 space-y-3">
-                  <div className="relative">
-                    <textarea
-                      placeholder="Escreva sua resposta ou reflexão aqui para fixar o conteúdo..."
-                      value={q.userNotes || ''}
-                      onChange={(e) =>
-                        onUpdateQuestion({
-                          ...q,
-                          userNotes: e.target.value,
-                        })
-                      }
-                      rows={3}
-                      className={`w-full p-3 rounded-xl border text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 transition resize-none ${
-                        lightMode
-                          ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400'
-                          : 'bg-slate-800/60 border-slate-700 text-slate-100 placeholder-slate-500'
-                      }`}
-                    />
-                  </div>
+                <div className="mt-2.5 space-y-2">
+                  <textarea
+                    placeholder="Escreva sua resposta curta aqui..."
+                    value={q.userNotes || ''}
+                    onChange={(e) =>
+                      onUpdateQuestion({
+                        ...q,
+                        userNotes: e.target.value,
+                      })
+                    }
+                    rows={2}
+                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none focus:ring-1 focus:ring-purple-500 transition resize-none ${
+                      lightMode
+                        ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400'
+                        : 'bg-slate-800/50 border-slate-700 text-slate-100 placeholder-slate-500'
+                    }`}
+                  />
 
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => handleToggleDiscursiveReveal(q)}
-                      className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-3 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer"
                     >
                       {q.userRevealedDiscursive ? (
                         <>
-                          <EyeOff className="w-3.5 h-3.5" />
-                          <span>Ocultar Gabarito Comentado</span>
+                          <EyeOff className="w-3 h-3" />
+                          <span>Ocultar Resposta</span>
                         </>
                       ) : (
                         <>
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Ver Gabarito e Explicação do Professor</span>
+                          <Eye className="w-3 h-3" />
+                          <span>Ver Resposta Objetiva</span>
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* Revealed Model Answer */}
                   {q.userRevealedDiscursive && (
                     <div
-                      className={`p-3.5 rounded-xl border animate-in fade-in slide-in-from-top-1 ${
+                      className={`p-2.5 rounded-xl border ${
                         lightMode
-                          ? 'bg-purple-50 border-purple-200 text-purple-950'
-                          : 'bg-purple-950/30 border-purple-800/50 text-purple-200'
+                          ? 'bg-purple-50/70 border-purple-200'
+                          : 'bg-purple-950/25 border-purple-800/40'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 font-bold text-xs mb-1.5 text-purple-300">
-                        <BookOpen className="w-4 h-4" />
-                        <span>Gabarito e Critérios de Correção:</span>
+                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-purple-300">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Gabarito Resumido:</span>
                       </div>
-                      <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line font-sans">
-                        {q.explanation}
-                      </p>
+                      {renderStructuredExplanation(q.explanation)}
                     </div>
                   )}
                 </div>
@@ -557,9 +582,8 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
                 lightMode ? 'text-slate-600' : 'text-slate-400'
               }`}
             >
-              Com a chave gratuita do Google Gemini, o app gera perguntas ultra-aprofundadas
-              e gabaritos detalhados para cada áudio. Se não tiver, o app continua funcionando
-              normalmente com o motor linguístico offline!
+              Configure sua chave gratuita do Google Gemini se desejar geração via IA na nuvem,
+              ou deixe em branco para usar o gerador inteligente local.
             </p>
 
             <div className="space-y-3">
@@ -629,4 +653,3 @@ export const TopicQuestionsView: React.FC<TopicQuestionsViewProps> = ({
     </div>
   );
 };
-

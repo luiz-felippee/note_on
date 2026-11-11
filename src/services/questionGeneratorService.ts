@@ -1,10 +1,14 @@
 import { StudyQuestion, QuestionType } from '../types';
+import { getStoredAiKeys } from './aiProviderService';
 
 const GEMINI_STORAGE_KEY = 'noteon_gemini_api_key';
 
 export function getGeminiApiKey(): string {
   try {
-    return localStorage.getItem(GEMINI_STORAGE_KEY) || '';
+    const direct = localStorage.getItem(GEMINI_STORAGE_KEY) || '';
+    if (direct.trim()) return direct.trim();
+    const multi = getStoredAiKeys();
+    return (multi.geminiApiKey || '').trim();
   } catch {
     return '';
   }
@@ -32,6 +36,180 @@ interface GenerateParams {
   courseId?: string;
 }
 
+/**
+ * Limpa trechos corridos (sem pontuação) vindos do Web Speech API e limita ao tamanho máximo
+ * sem cortar palavras ao meio.
+ */
+export function formatConciseText(raw: string, maxChars: number = 95, addEllipsis = false): string {
+  if (!raw) return '';
+  let text = raw
+    .replace(/\s+/g, ' ')
+    .replace(/^(né|tá|então|aí|tipo|bom|bem|olha|veja|assim|e|mas|ou)\b[,.\s]*/i, '')
+    .trim();
+
+  if (!text) return '';
+
+  if (text.length > maxChars) {
+    const sliced = text.slice(0, maxChars);
+    const lastSpace = sliced.lastIndexOf(' ');
+    text = lastSpace > maxChars * 0.55 ? sliced.slice(0, lastSpace) : sliced;
+    // Remove preposições/conjunções soltas no final
+    text = text
+      .replace(/\s+(de|da|do|das|dos|em|na|no|nas|nos|com|para|por|que|se|e|ou|mas|como|quando|onde)$/i, '')
+      .trim();
+    if (addEllipsis) {
+      text = `${text.replace(/[.,;:!?]+$/, '')}...`;
+    }
+  }
+
+  // Capitalize first letter
+  text = text.charAt(0).toUpperCase() + text.slice(1);
+  return text;
+}
+
+/**
+ * Divide transcrições contínuas (mesmo sem pontos finais do reconhecimento de voz)
+ * em ideias curtas e independentes de 8 a 16 palavras.
+ */
+export function splitTranscriptIntoIdeas(transcript: string): string[] {
+  const cleaned = transcript.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+
+  // 1. Primeiro divide por pontuação caso exista
+  const roughParts = cleaned
+    .split(/[.!?;:\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // 2. Subdivide blocos longos usando conectivos naturais da fala em português
+  const connectorRegex =
+    /\s+(?=porque\b|pois\b|portanto\b|então\b|ou seja\b|além disso\b|por exemplo\b|significa\b|consiste\b|importante\b|lembrem\b|quando\b|onde\b|enquanto\b|sendo que\b|já que\b|dessa forma\b|nesse sentido\b|basicamente\b|primeiro\b|segundo\b|agora\b)/i;
+
+  const mediumParts: string[] = [];
+  for (const part of roughParts) {
+    if (part.length <= 95) {
+      mediumParts.push(part);
+    } else {
+      const sub = part
+        .split(connectorRegex)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      mediumParts.push(...sub);
+    }
+  }
+
+  // 3. Se ainda houver blocos sem conectivos (> 95 chars), divide a cada ~13 palavras
+  const finalIdeas: string[] = [];
+  for (const part of mediumParts) {
+    const words = part.split(' ').filter(Boolean);
+    if (words.length <= 15 && part.length <= 100) {
+      if (words.length >= 4) {
+        finalIdeas.push(formatConciseText(part, 90, false));
+      }
+    } else {
+      const chunkSize = 13;
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const chunk = words.slice(i, i + chunkSize).join(' ');
+        if (chunk.split(' ').length >= 4) {
+          finalIdeas.push(formatConciseText(chunk, 90, false));
+        }
+      }
+    }
+  }
+
+  // Remove duplicados mantendo ordem
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const idea of finalIdeas) {
+    const key = idea.toLowerCase();
+    if (!seen.has(key) && idea.length >= 15) {
+      seen.add(key);
+      unique.push(idea);
+    }
+  }
+
+  if (unique.length === 0 && cleaned.length > 0) {
+    unique.push(formatConciseText(cleaned, 85, false));
+  }
+
+  return unique;
+}
+
+/**
+ * Organiza e enxuga qualquer questão (nova ou já salva anteriormente no banco)
+ * para garantir que enunciado, alternativas, citação e resposta sejam sempre curtos e bem organizados.
+ */
+export function sanitizeAndOrganizeQuestion(
+  q: StudyQuestion,
+  topicTitle: string = 'Aula',
+  subjectName: string = 'Disciplina'
+): StudyQuestion {
+  const shortTopic = formatConciseText(topicTitle, 42, false);
+  const shortSubject = formatConciseText(subjectName, 32, false);
+
+  // 1. Enunciado curto e direto (máx 125 caracteres)
+  let cleanPrompt = (q.prompt || '').replace(/\s+/g, ' ').trim();
+  if (cleanPrompt.length > 130) {
+    cleanPrompt = formatConciseText(cleanPrompt, 120, false);
+    if (!cleanPrompt.endsWith('?') && !cleanPrompt.endsWith(':')) {
+      cleanPrompt += '?';
+    }
+  }
+
+  // 2. Trecho do professor curto (máx 95 caracteres)
+  let cleanQuote = q.teacherQuoteSnippet ? formatConciseText(q.teacherQuoteSnippet, 90, true) : undefined;
+
+  // 3. Alternativas curtas e equilibradas (máx 88 caracteres cada)
+  let cleanOptions = q.options;
+  if (q.type === 'multiple_choice' && Array.isArray(q.options) && q.options.length > 0) {
+    cleanOptions = q.options.map((opt) => {
+      const cleanedOpt = opt.replace(/^["'«»]+|["'«»]+$/g, '').trim();
+      if (cleanedOpt.length <= 92) {
+        const formatted = formatConciseText(cleanedOpt, 92, false);
+        return formatted.endsWith('.') ? formatted : `${formatted}.`;
+      }
+      const ideas = splitTranscriptIntoIdeas(cleanedOpt);
+      const bestIdea = ideas[0] || formatConciseText(cleanedOpt, 82, false);
+      return bestIdea.endsWith('.') ? bestIdea : `${bestIdea}.`;
+    });
+  }
+
+  // 4. Gabarito / Resposta curta e estruturada em tópicos
+  let cleanExplanation = (q.explanation || '').trim();
+  const isAlreadyStructured =
+    cleanExplanation.includes('✅') && cleanExplanation.length <= 230;
+
+  if (!isAlreadyStructured) {
+    // Extrai a ideia central sem repetir um texto gigante
+    const rawCore = cleanExplanation
+      .replace(/^Conforme enfatizado na fala gravada:\s*/i, '')
+      .replace(/^Gabarito esperado:\s*/i, '')
+      .replace(/^O professor destacou o seguinte raciocínio central:\s*/i, '')
+      .replace(/^O professor vinculou a aplicação prática diretamente a:\s*/i, '')
+      .replace(/["“”]/g, '')
+      .trim();
+
+    const coreIdeas = splitTranscriptIntoIdeas(rawCore);
+    const mainPoint =
+      coreIdeas[0] ||
+      (cleanQuote ? cleanQuote.replace(/\.\.\.$/, '') : `Conceito central de ${shortTopic}`);
+    const secondPoint =
+      coreIdeas[1] && coreIdeas[1] !== mainPoint
+        ? coreIdeas[1]
+        : `Fundamento essencial de ${shortTopic} em ${shortSubject}`;
+
+    cleanExplanation = `✅ Resposta direta: ${formatConciseText(mainPoint, 90, false)}.\n📌 Ponto-chave: ${formatConciseText(secondPoint, 90, false)}.`;
+  }
+
+  return {
+    ...q,
+    prompt: cleanPrompt,
+    options: cleanOptions,
+    explanation: cleanExplanation,
+    teacherQuoteSnippet: cleanQuote,
+  };
+}
+
 export async function generateQuestionsFromTranscript(
   params: GenerateParams
 ): Promise<StudyQuestion[]> {
@@ -56,24 +234,32 @@ export async function generateQuestionsFromTranscript(
       });
 
       if (aiQuestions && aiQuestions.length > 0) {
-        return aiQuestions.map((q, idx) => ({
-          id: `question-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-          topicId,
-          subjectId,
-          courseId,
-          audioItemId,
-          type: q.type || 'multiple_choice',
-          prompt: q.prompt,
-          options: q.options && q.options.length >= 2 ? q.options : undefined,
-          correctOptionIndex: typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex : 0,
-          explanation: q.explanation || 'Explicação baseada na explicação do professor em aula.',
-          teacherQuoteSnippet: q.teacherQuoteSnippet || cleanTranscript.slice(0, 150),
-          createdAt: Date.now() + idx,
-        }));
+        return aiQuestions.map((q, idx) =>
+          sanitizeAndOrganizeQuestion(
+            {
+              id: `question-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+              topicId,
+              subjectId,
+              courseId,
+              audioItemId,
+              type: q.type || 'multiple_choice',
+              prompt: q.prompt,
+              options: q.options && q.options.length >= 2 ? q.options : undefined,
+              correctOptionIndex:
+                typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex : 0,
+              explanation:
+                q.explanation || 'Explicação baseada nos pontos-chave da aula.',
+              teacherQuoteSnippet:
+                q.teacherQuoteSnippet || formatConciseText(cleanTranscript, 85, true),
+              createdAt: Date.now() + idx,
+            },
+            topicTitle,
+            subjectName || 'Aula'
+          )
+        );
       }
     } catch (err) {
       console.warn('Falha na chamada ao Gemini API, usando gerador linguístico local:', err);
-      // Fallback seamlessly to local linguistic engine
     }
   }
 
@@ -89,7 +275,7 @@ export async function generateQuestionsFromTranscript(
   });
 }
 
-// Gemini REST API Integration
+// Gemini REST API Integration with strict conciseness rules
 async function callGeminiApi(args: {
   apiKey: string;
   transcript: string;
@@ -105,35 +291,29 @@ async function callGeminiApi(args: {
     teacherQuoteSnippet?: string;
   }>
 > {
-  const prompt = `Você é um tutor pedagógico acadêmico especialista em aprendizagem ativa e fixação de conteúdo para vestibulares, faculdade e concursos.
-Com base EXCLUSIVAMENTE na transcrição do áudio gravado em aula pelo professor sobre o tema "${args.topicTitle}" da disciplina "${args.subjectName}":
-
+  const prompt = `Você é um professor especialista em criar questões objetivas, curtas e muito bem organizadas.
+Tema da aula: "${args.topicTitle}" (${args.subjectName}).
 Transcrição da aula:
 """
-${args.transcript}
+${args.transcript.slice(0, 3500)}
 """
 
-Elabore entre 2 e 4 questões excelentes para testar e fixar o conhecimento dos estudantes.
-Distribua em formato misto:
-- Pelo menos 1 questão de múltipla escolha com 4 alternativas (A, B, C, D), indicando o índice da resposta correta (0 a 3) e uma explicação didática do porquê está correta.
-- Pelo menos 1 questão discursiva/conceitual aberta com um gabarito comentado completo para o aluno conferir sua reflexão.
-Para cada questão, extraia um trecho curto literal ou fiel da fala do professor (teacherQuoteSnippet).
+Crie 3 questões (2 de múltipla escolha e 1 discursiva) seguindo RIGOROSAMENTE estas regras de tamanho e organização:
+1. "prompt" (Pergunta): Direta, clara e curta (MÁXIMO 110 caracteres, apenas 1 frase).
+2. "options" (Alternativas): 4 opções curtas e equilibradas (MÁXIMO 80 caracteres cada). Varie "correctOptionIndex" entre 0, 1, 2 e 3.
+3. "explanation" (Resposta/Gabarito): Curta, direta e dividida em 2 tópicos (MÁXIMO 170 caracteres no total):
+   "✅ Resposta direta: [1 frase curta]\n📌 Ponto-chave: [1 frase curta]"
+4. "teacherQuoteSnippet": Trecho curto da fala (MÁXIMO 80 caracteres).
 
-Retorne ESTRITAMENTE um array JSON puro (sem marcação de markdown extra como \`\`\`json) com os objetos:
+Retorne APENAS um array JSON válido:
 [
   {
     "type": "multiple_choice",
-    "prompt": "Enunciado claro e contextualizado com a aula...",
-    "options": ["Alternativa A", "Alternativa B", "Alternativa C", "Alternativa D"],
-    "correctOptionIndex": 0,
-    "explanation": "Explicação detalhada...",
-    "teacherQuoteSnippet": "Trecho que o professor falou..."
-  },
-  {
-    "type": "discursive",
-    "prompt": "Pergunta aberta conceitual instigante...",
-    "explanation": "Gabarito modelo com os pontos fundamentais que o estudante deve citar...",
-    "teacherQuoteSnippet": "Trecho que o professor falou..."
+    "prompt": "Qual é a função principal de...",
+    "options": ["Opção A curta.", "Opção B curta.", "Opção C curta.", "Opção D curta."],
+    "correctOptionIndex": 1,
+    "explanation": "✅ Resposta direta: ...\n📌 Ponto-chave: ...",
+    "teacherQuoteSnippet": "Trecho curto..."
   }
 ]`;
 
@@ -143,14 +323,10 @@ Retorne ESTRITAMENTE um array JSON puro (sem marcação de markdown extra como \
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: prompt }],
-        },
-      ],
+      contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        temperature: 0.3,
+        temperature: 0.25,
       },
     }),
   });
@@ -161,14 +337,11 @@ Retorne ESTRITAMENTE um array JSON puro (sem marcação de markdown extra como \
   }
 
   const json = await res.json();
-  const textOutput =
-    json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
+  const textOutput = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   if (!textOutput) {
     throw new Error('Resposta vazia da API Gemini.');
   }
 
-  // Parse JSON
   let cleaned = textOutput.trim();
   if (cleaned.startsWith('```json')) {
     cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
@@ -179,7 +352,35 @@ Retorne ESTRITAMENTE um array JSON puro (sem marcação de markdown extra como \
   return JSON.parse(cleaned);
 }
 
-// Local Linguistic Semantic Question Generator
+/**
+ * Embaralha as alternativas de forma determinística e retorna as opções + índice correto
+ */
+function buildBalancedOptions(
+  correctText: string,
+  distractors: string[],
+  seed: number
+): { options: string[]; correctOptionIndex: number } {
+  const cleanCorrect = `${formatConciseText(correctText, 82, false).replace(/[.]+$/, '')}.`;
+  const cleanDistractors = distractors
+    .slice(0, 3)
+    .map((d) => `${formatConciseText(d, 82, false).replace(/[.]+$/, '')}.`);
+
+  const targetIndex = Math.abs(seed) % 4;
+  const options: string[] = [];
+  let dIdx = 0;
+
+  for (let i = 0; i < 4; i++) {
+    if (i === targetIndex) {
+      options.push(cleanCorrect);
+    } else {
+      options.push(cleanDistractors[dIdx++] || 'Conceito não relacionado ao tema.');
+    }
+  }
+
+  return { options, correctOptionIndex: targetIndex };
+}
+
+// Local Linguistic Semantic Question Generator (Concise & Well-Organized)
 function generateLocalLinguisticQuestions(args: {
   transcript: string;
   topicTitle: string;
@@ -191,16 +392,11 @@ function generateLocalLinguisticQuestions(args: {
 }): StudyQuestion[] {
   const { transcript, topicTitle, subjectName, audioItemId, topicId, subjectId, courseId } = args;
 
-  // Split transcript into sentences
-  const sentences = transcript
-    .split(/[.!?]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 20);
+  const shortTopic = formatConciseText(topicTitle, 40, false);
+  const shortSubject = formatConciseText(subjectName, 30, false);
 
-  const questions: StudyQuestion[] = [];
-  const baseTime = Date.now();
+  const ideas = splitTranscriptIntoIdeas(transcript);
 
-  // Find sentences with explanatory or emphasis markers
   const causalKeywords = [
     'porque',
     'pois',
@@ -216,78 +412,94 @@ function generateLocalLinguisticQuestions(args: {
     'processo',
     'regra',
     'exemplo',
+    'objetivo',
   ];
 
-  const keySentences = sentences.filter((s) =>
+  const keyIdeas = ideas.filter((s) =>
     causalKeywords.some((kw) => s.toLowerCase().includes(kw))
   );
 
-  const primarySentence =
-    keySentences[0] || sentences[0] || transcript.slice(0, 140);
-  const secondarySentence =
-    keySentences[1] || sentences[1] || sentences[sentences.length - 1] || primarySentence;
+  const idea1 = keyIdeas[0] || ideas[0] || formatConciseText(transcript, 80, false);
+  const idea2 =
+    keyIdeas[1] ||
+    ideas[1] ||
+    ideas[Math.floor(ideas.length / 2)] ||
+    idea1;
+  const idea3 =
+    ideas[ideas.length - 1] !== idea1 && ideas[ideas.length - 1] !== idea2
+      ? ideas[ideas.length - 1]
+      : ideas[2] || idea2;
 
-  // 1. Multiple Choice Question
-  const mcSnippet = primarySentence;
+  const questions: StudyQuestion[] = [];
+  const baseTime = Date.now();
+
+  // 1. Questão 1 (Múltipla Escolha - Conceito Principal)
+  const mc1 = buildBalancedOptions(
+    idea1,
+    [
+      `Aborda um tema secundário sem relação direta com ${shortTopic}`,
+      `Descarta a aplicação prática desse conceito em ${shortSubject}`,
+      `Apresenta uma exceção que anula a regra geral de ${shortTopic}`,
+    ],
+    baseTime % 4
+  );
+
   questions.push({
-    id: `q-local-${baseTime}-mc`,
+    id: `q-local-${baseTime}-1`,
     topicId,
     subjectId,
     courseId,
     audioItemId,
     type: 'multiple_choice',
-    prompt: `Com base na aula de ${subjectName} sobre "${topicTitle}", como o professor explica o ponto central abordado neste trecho da gravação?`,
-    options: [
-      `${mcSnippet.charAt(0).toUpperCase() + mcSnippet.slice(1)}.`,
-      `O conceito abordado é apenas secundário e não se relaciona com ${topicTitle}.`,
-      `A explicação do professor descarta a influência desse mecanismo na disciplina.`,
-      `Trata-se de uma exceção que invalida os princípios teóricos de ${subjectName}.`,
-    ],
-    correctOptionIndex: 0,
-    explanation: `Conforme enfatizado na fala gravada: "${mcSnippet}". Essa é a definição e fundamento direto apresentado pelo professor.`,
-    teacherQuoteSnippet: mcSnippet,
+    prompt: `Qual é o ponto central explicado sobre "${shortTopic}"?`,
+    options: mc1.options,
+    correctOptionIndex: mc1.correctOptionIndex,
+    explanation: `✅ Resposta direta: ${formatConciseText(idea1, 85, false)}.\n📌 Ponto-chave: Fundamento principal apresentado na aula de ${shortSubject}.`,
+    teacherQuoteSnippet: formatConciseText(idea1, 85, true),
     createdAt: baseTime,
   });
 
-  // 2. Discursive Conceptual Question
-  const discSnippet = secondarySentence;
+  // 2. Questão 2 (Discursiva Curta - Síntese Objetiva)
   questions.push({
-    id: `q-local-${baseTime}-disc`,
+    id: `q-local-${baseTime}-2`,
     topicId,
     subjectId,
     courseId,
     audioItemId,
     type: 'discursive',
-    prompt: `Explique com suas próprias palavras o conceito discutido pelo professor em "${topicTitle}": qual a principal conclusão transmitida na aula?`,
-    explanation: `Gabarito esperado:\nO professor destacou o seguinte raciocínio central:\n"${discSnippet}".\n\nAo responder, você deve citar como essa ideia se conecta aos objetivos de ${topicTitle} e seus impactos práticos em ${subjectName}.`,
-    teacherQuoteSnippet: discSnippet,
+    prompt: `Resuma em 1 frase a ideia-chave apresentada sobre "${shortTopic}":`,
+    explanation: `✅ Resposta direta: ${formatConciseText(idea2, 88, false)}.\n📌 Ponto-chave: Conecte essa ideia à aplicação prática em ${shortSubject}.`,
+    teacherQuoteSnippet: formatConciseText(idea2, 85, true),
     createdAt: baseTime + 1,
   });
 
-  // 3. If transcript is longer (> 180 chars), add a 3rd question (practical application)
-  if (sentences.length >= 3 && transcript.length > 200) {
-    const thirdSentence = sentences[Math.min(2, sentences.length - 1)];
+  // 3. Questão 3 (Múltipla Escolha - Aplicação, quando houver mais conteúdo)
+  if (ideas.length >= 2 && transcript.length > 90) {
+    const mc3 = buildBalancedOptions(
+      idea3,
+      [
+        `Substituir o método da aula sem considerar ${shortTopic}`,
+        `Ignorar os critérios técnicos discutidos em ${shortSubject}`,
+        `Adotar um procedimento isolado sem base no tema da aula`,
+      ],
+      (baseTime + 2) % 4
+    );
+
     questions.push({
-      id: `q-local-${baseTime}-app`,
+      id: `q-local-${baseTime}-3`,
       topicId,
       subjectId,
       courseId,
       audioItemId,
       type: 'multiple_choice',
-      prompt: `Qual a melhor aplicação ou desdobramento prático mencionado na aula para o tema "${topicTitle}"?`,
-      options: [
-        `Aplicar a reflexão: "${thirdSentence.charAt(0).toUpperCase() + thirdSentence.slice(1)}".`,
-        `Substituir totalmente a metodologia tradicional sem necessidade de fundamentação teórica.`,
-        `Desconsiderar os fatores práticos em provas e avaliações acadêmicas.`,
-        `Adotar um procedimento puramente empírico sem conexão com os conceitos vistos.`,
-      ],
-      correctOptionIndex: 0,
-      explanation: `O professor vinculou a aplicação prática diretamente a: "${thirdSentence}".`,
-      teacherQuoteSnippet: thirdSentence,
+      prompt: `De acordo com a aula de ${shortSubject}, qual conclusão aplica-se a "${shortTopic}"?`,
+      options: mc3.options,
+      correctOptionIndex: mc3.correctOptionIndex,
+      explanation: `✅ Resposta direta: ${formatConciseText(idea3, 85, false)}.\n📌 Ponto-chave: Conclusão prática destacada pelo professor na gravação.`,
+      teacherQuoteSnippet: formatConciseText(idea3, 85, true),
       createdAt: baseTime + 2,
     });
   }
 
   return questions;
 }
-
