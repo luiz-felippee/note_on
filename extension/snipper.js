@@ -161,7 +161,11 @@
   // Capture full screen fallback
   function captureFull() {
     overlay.style.display = 'none';
+    const recorder = document.getElementById('noteon-floating-audio-recorder');
+    if (recorder) recorder.style.display = 'none';
+
     chrome.runtime.sendMessage({ action: 'CAPTURE_FULL_NOW' }, (res) => {
+      if (recorder) recorder.style.display = 'flex';
       cleanup();
       if (res && res.success) {
         showSuccessNotification(res);

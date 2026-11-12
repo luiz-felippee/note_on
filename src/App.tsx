@@ -454,20 +454,34 @@ export default function App() {
 
     const onFocus = () => {
       syncOnWake();
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         syncOnWake();
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(() => {});
+        }
+      }
+    };
+
+    const onFullscreenChange = () => {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
       }
     };
 
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibilityChange);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
 
     return () => {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
     };
   }, [cloudUser, isSyncingCloud]);
 
@@ -1460,6 +1474,20 @@ export default function App() {
               finalStr += event.results[i][0].transcript + ' ';
             }
             setLiveTranscript(finalStr.trim());
+          };
+          recognition.onerror = () => {};
+          recognition.onend = () => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+              setTimeout(() => {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                  try {
+                    recognition.start();
+                  } catch {
+                    // ignore
+                  }
+                }
+              }, 250);
+            }
           };
           recognition.start();
           speechRecognitionRef.current = recognition;

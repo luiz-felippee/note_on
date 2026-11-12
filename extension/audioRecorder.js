@@ -1,8 +1,9 @@
-// NoteOn Chrome Extension - Floating Audio Recorder Script (v1.5.0)
-// Records lecture audio (from microphone and/or tab video/audio) and syncs directly to NoteOn Cloud & Open Tab.
+// NoteOn Chrome Extension - Floating Audio Recorder Script (v1.5.1)
+// Records lecture audio (microphone + optional page media) and syncs directly to NoteOn Cloud & Open Tab.
+// Built to keep recording continuously even when videos or the browser enter/exit FULLSCREEN mode!
 
 (function () {
-  // If already recording on this page, pressing Alt+R or clicking the popup button again stops & saves!
+  // If already recording on this page, pressing Alt+R or clicking popup button stops & saves!
   const existing = document.getElementById('noteon-floating-audio-recorder');
   if (existing) {
     const stopBtn = existing.querySelector('#noteon-btn-stop');
@@ -22,13 +23,15 @@
   let lastResumeTime = 0;
   let timerInterval = null;
   let isPaused = false;
+  let isUserStopping = false;
   let recognition = null;
   let liveTranscript = '';
   let audioContext = null;
   let analyser = null;
   let animFrame = null;
+  let pageMediaAudioSources = [];
 
-  // Try to capture audio from any active <video> or <audio> element on the page
+  // Capture audio from active <video> or <audio> without crashing when video changes resolution or enters fullscreen
   function getPageMediaAudioTracks() {
     const tracks = [];
     try {
@@ -43,7 +46,14 @@
                 : null;
           if (stream) {
             stream.getAudioTracks().forEach((t) => {
-              if (t.readyState === 'live') tracks.push(t);
+              if (t.readyState === 'live') {
+                // If a page video track ends (e.g. YouTube switches quality in fullscreen),
+                // DO NOT stop the recording!
+                t.addEventListener('ended', () => {
+                  console.log('[NoteOn] Faixa de áudio do player de vídeo finalizada; mantendo gravação via microfone.');
+                });
+                tracks.push(t);
+              }
             });
           }
         } catch (_) {}
@@ -56,7 +66,7 @@
     let userMicStream = null;
 
     // 1. Request microphone with echoCancellation=false and noiseSuppression=false
-    // so it captures lectures playing from another computer or speakers without muting them
+    // so it captures lectures playing from another computer, room speakers, or current machine
     try {
       userMicStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -69,7 +79,7 @@
       try {
         userMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (err) {
-        console.warn('Microfone indisponível, tentando áudio da aba:', err);
+        console.warn('[NoteOn] Microfone direto indisponível, tentando áudio da aba:', err);
       }
     }
 
@@ -81,7 +91,7 @@
       return;
     }
 
-    // Mix microphone + page media if both exist, or use whichever is available
+    // Mix microphone + page media in AudioContext
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
@@ -97,20 +107,29 @@
         }
 
         if (pageTracks.length > 0) {
-          const pageStream = new MediaStream(pageTracks);
-          const pageSource = audioContext.createMediaStreamSource(pageStream);
-          pageSource.connect(analyser);
-          pageSource.connect(dest);
+          try {
+            const pageStream = new MediaStream(pageTracks);
+            const pageSource = audioContext.createMediaStreamSource(pageStream);
+            pageMediaAudioSources.push(pageSource);
+            pageSource.connect(analyser);
+            pageSource.connect(dest);
+          } catch (_) {}
         }
 
-        if (dest.stream.getAudioTracks().length > 0) {
+        if (dest.stream && dest.stream.getAudioTracks().length > 0) {
           combinedStream = dest.stream;
         }
       }
     } catch (_) {}
 
+    // Fallback if AudioContext wasn't available
     if (!combinedStream) {
-      combinedStream = userMicStream || new MediaStream(pageTracks);
+      combinedStream = userMicStream || (pageTracks.length > 0 ? new MediaStream(pageTracks) : null);
+    }
+
+    if (!combinedStream) {
+      showPermissionErrorToast();
+      return;
     }
 
     startRecording(combinedStream);
@@ -146,6 +165,7 @@
     accumulatedSeconds = 0;
     lastResumeTime = Date.now();
     audioChunks = [];
+    isUserStopping = false;
 
     let recorderOptions = { audioBitsPerSecond: 32000 };
     if (typeof MediaRecorder.isTypeSupported === 'function') {
@@ -158,21 +178,44 @@
       }
     }
 
-    try {
-      mediaRecorder = new MediaRecorder(stream, recorderOptions);
-    } catch (_) {
-      mediaRecorder = new MediaRecorder(stream);
-    }
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        audioChunks.push(e.data);
+    const createRecorderInstance = (activeStream) => {
+      try {
+        mediaRecorder = new MediaRecorder(activeStream, recorderOptions);
+      } catch (_) {
+        mediaRecorder = new MediaRecorder(activeStream);
       }
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunks.push(e.data);
+        }
+      };
+
+      // Resilient stop handler: ONLY finish if the user clicked stop!
+      // If the browser stopped due to a video track end upon entering fullscreen, keep recording!
+      mediaRecorder.onstop = () => {
+        if (isUserStopping) {
+          deliverRecordedAudio();
+        } else {
+          console.warn('[NoteOn] MediaRecorder interrompido inesperadamente (ex: tela cheia). Reiniciando gravação sem perda de áudio...');
+          const fallbackStream = micStream || combinedStream;
+          if (fallbackStream && fallbackStream.active) {
+            try {
+              createRecorderInstance(fallbackStream);
+              mediaRecorder.start(400);
+            } catch (err) {
+              console.error('[NoteOn] Falha ao reiniciar gravador:', err);
+            }
+          }
+        }
+      };
+
+      mediaRecorder.start(400);
     };
 
-    mediaRecorder.start(400);
+    createRecorderInstance(stream);
 
-    // Web Speech API for real-time transcription
+    // Web Speech API for real-time transcription with auto-restart on fullscreen/tab change
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRec) {
       try {
@@ -202,10 +245,14 @@
 
         recognition.onerror = () => {};
         recognition.onend = () => {
-          if (mediaRecorder && mediaRecorder.state === 'recording') {
-            try {
-              recognition.start();
-            } catch (_) {}
+          if (!isUserStopping && !isPaused && mediaRecorder && mediaRecorder.state !== 'inactive') {
+            setTimeout(() => {
+              if (!isUserStopping && !isPaused) {
+                try {
+                  recognition.start();
+                } catch (_) {}
+              }
+            }, 300);
           }
         };
 
@@ -214,6 +261,7 @@
     }
 
     buildFloatingWidget();
+    bindFullscreenAndFocusGuards();
 
     timerInterval = setInterval(() => {
       if (!isPaused) {
@@ -235,6 +283,62 @@
     if (el) el.textContent = formatTime(secs);
   }
 
+  // Ensures AudioContext never stays suspended when entering/exiting fullscreen or changing tabs
+  function ensureAudioActive() {
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => {});
+    }
+  }
+
+  // Fullscreen Guard: Keeps the floating recorder VISIBLE and on top when video goes fullscreen!
+  function handleFullscreenTransition() {
+    ensureAudioActive();
+    const container = document.getElementById('noteon-floating-audio-recorder');
+    if (!container) return;
+
+    const fsElement =
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement;
+
+    if (fsElement) {
+      // Browser isolated this element in the Top Layer: move widget inside it so it stays visible!
+      if (container.parentElement !== fsElement) {
+        fsElement.appendChild(container);
+      }
+      container.style.zIndex = '2147483647';
+      container.style.position = 'fixed';
+      container.style.bottom = '24px';
+      container.style.right = '24px';
+    } else {
+      // Exited fullscreen: move back to document.body
+      if (container.parentElement !== document.body) {
+        document.body.appendChild(container);
+      }
+      container.style.zIndex = '2147483647';
+      container.style.position = 'fixed';
+      container.style.bottom = '20px';
+      container.style.right = '20px';
+    }
+  }
+
+  function bindFullscreenAndFocusGuards() {
+    document.addEventListener('fullscreenchange', handleFullscreenTransition);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenTransition);
+    document.addEventListener('mozfullscreenchange', handleFullscreenTransition);
+    window.addEventListener('focus', ensureAudioActive);
+    document.addEventListener('visibilitychange', ensureAudioActive);
+  }
+
+  function unbindFullscreenAndFocusGuards() {
+    document.removeEventListener('fullscreenchange', handleFullscreenTransition);
+    document.removeEventListener('webkitfullscreenchange', handleFullscreenTransition);
+    document.removeEventListener('mozfullscreenchange', handleFullscreenTransition);
+    window.removeEventListener('focus', ensureAudioActive);
+    document.removeEventListener('visibilitychange', ensureAudioActive);
+  }
+
   function buildFloatingWidget() {
     const styleId = 'noteon-recorder-styles';
     if (!document.getElementById(styleId)) {
@@ -253,7 +357,7 @@
     const container = document.createElement('div');
     container.id = 'noteon-floating-audio-recorder';
     container.style.cssText =
-      'position:fixed;bottom:20px;right:20px;z-index:2147483647;display:flex;flex-direction:column;gap:6px;background:#090d16;color:#f8fafc;border-radius:16px;border:1px solid rgba(99,102,241,0.45);box-shadow:0 16px 36px rgba(0,0,0,0.75);padding:10px 14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;user-select:none;cursor:grab;max-width:340px;';
+      'position:fixed;bottom:20px;right:20px;z-index:2147483647;display:flex;flex-direction:column;gap:6px;background:#090d16;color:#f8fafc;border-radius:16px;border:1px solid rgba(99,102,241,0.55);box-shadow:0 16px 40px rgba(0,0,0,0.85);padding:10px 14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;user-select:none;cursor:grab;max-width:340px;';
 
     container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
@@ -286,7 +390,18 @@
       <div id="noteon-transcript-preview" style="display: none; font-size: 10px; color: #94a3b8; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 6px; background: rgba(30, 41, 59, 0.5); border-radius: 6px;"></div>
     `;
 
-    document.body.appendChild(container);
+    // If page is currently in fullscreen, attach to the fullscreen element immediately!
+    const fsElement =
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement;
+
+    if (fsElement) {
+      fsElement.appendChild(container);
+    } else {
+      document.body.appendChild(container);
+    }
 
     const stopBtn = container.querySelector('#noteon-btn-stop');
     const pauseBtn = container.querySelector('#noteon-btn-pause');
@@ -295,6 +410,7 @@
     stopBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      isUserStopping = true;
       finishAndDeliver();
     });
 
@@ -324,6 +440,7 @@
     cancelBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      isUserStopping = true;
       try {
         chrome.runtime.sendMessage({ action: 'CLEAR_AUDIO_BADGE' });
       } catch (_) {}
@@ -341,7 +458,6 @@
     el.onmousedown = dragMouseDown;
 
     function dragMouseDown(e) {
-      // Never hijack clicks on buttons or elements inside buttons!
       if (e.target && e.target.closest && e.target.closest('button, input, a')) {
         return;
       }
@@ -392,7 +508,7 @@
   }
 
   function finishAndDeliver() {
-    const finalDuration = Math.max(1, getElapsedSeconds());
+    isUserStopping = true;
     const container = document.getElementById('noteon-floating-audio-recorder');
     if (container) {
       container.innerHTML = `
@@ -402,11 +518,6 @@
         </div>
       `;
     }
-
-    // Guaranteed cleanup timer so the widget NEVER stays stuck on screen
-    const forceCleanupTimer = setTimeout(() => {
-      cleanupAll();
-    }, 4500);
 
     if (recognition) {
       try {
@@ -421,90 +532,87 @@
         }
       } catch (_) {}
 
-      mediaRecorder.onstop = () => {
+      try {
+        mediaRecorder.stop();
+      } catch (_) {
+        deliverRecordedAudio();
+      }
+    } else {
+      deliverRecordedAudio();
+    }
+  }
+
+  function deliverRecordedAudio() {
+    const finalDuration = Math.max(1, getElapsedSeconds());
+    const forceCleanupTimer = setTimeout(() => {
+      cleanupAll();
+    }, 4500);
+
+    try {
+      const cleanMime =
+        mediaRecorder && mediaRecorder.mimeType && mediaRecorder.mimeType.includes('mp4')
+          ? 'audio/mp4'
+          : 'audio/webm';
+      const audioBlob = new Blob(audioChunks, { type: cleanMime });
+      const reader = new FileReader();
+
+      reader.onloadend = () => {
+        const base64Audio = reader.result;
         try {
-          const cleanMime =
-            mediaRecorder.mimeType && mediaRecorder.mimeType.includes('mp4')
-              ? 'audio/mp4'
-              : 'audio/webm';
-          const audioBlob = new Blob(audioChunks, { type: cleanMime });
-          const reader = new FileReader();
-
-          reader.onloadend = () => {
-            const base64Audio = reader.result;
-            try {
-              chrome.runtime.sendMessage(
-                {
-                  action: 'DELIVER_AUDIO_RECORDING',
-                  dataUrl: base64Audio,
-                  duration: finalDuration,
-                  transcript: liveTranscript.trim(),
-                  pageTitle: document.title || 'Áudio da Aula (Extensão)',
-                },
-                (res) => {
-                  if (chrome.runtime.lastError) {
-                    clearTimeout(forceCleanupTimer);
-                    cleanupAll();
-                    return;
-                  }
-                  const activeContainer = document.getElementById('noteon-floating-audio-recorder');
-                  if (activeContainer) {
-                    if (res && res.needsCloudLogin && !res.deliveredDirectly) {
-                      activeContainer.innerHTML = `
-                        <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 11px;">
-                          <span>⚠️</span>
-                          <span>Áudio na fila! Abra o ícone da extensão NoteOn e faça login.</span>
-                        </div>
-                      `;
-                      clearTimeout(forceCleanupTimer);
-                      setTimeout(() => cleanupAll(), 3500);
-                    } else {
-                      activeContainer.innerHTML = `
-                        <div style="display: flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; font-size: 12px;">
-                          <span>☁️✓</span>
-                          <span>Áudio salvo e enviado para o NoteOn!</span>
-                        </div>
-                      `;
-                      clearTimeout(forceCleanupTimer);
-                      setTimeout(() => cleanupAll(), 1600);
-                    }
-                  } else {
-                    clearTimeout(forceCleanupTimer);
-                    cleanupAll();
-                  }
-                }
-              );
-            } catch (_) {
+          chrome.runtime.sendMessage(
+            {
+              action: 'DELIVER_AUDIO_RECORDING',
+              dataUrl: base64Audio,
+              duration: finalDuration,
+              transcript: liveTranscript.trim(),
+              pageTitle: document.title || 'Áudio da Aula (Extensão)',
+            },
+            (res) => {
               clearTimeout(forceCleanupTimer);
-              cleanupAll();
+              const activeContainer = document.getElementById('noteon-floating-audio-recorder');
+              if (activeContainer) {
+                if (res && res.needsCloudLogin && !res.deliveredDirectly) {
+                  activeContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 11px;">
+                      <span>⚠️</span>
+                      <span>Áudio na fila! Abra o ícone da extensão NoteOn e faça login.</span>
+                    </div>
+                  `;
+                  setTimeout(() => cleanupAll(), 3500);
+                } else {
+                  activeContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; font-size: 12px;">
+                      <span>☁️✓</span>
+                      <span>Áudio salvo e enviado para o NoteOn!</span>
+                    </div>
+                  `;
+                  setTimeout(() => cleanupAll(), 1600);
+                }
+              } else {
+                cleanupAll();
+              }
             }
-          };
-
-          reader.onerror = () => {
-            clearTimeout(forceCleanupTimer);
-            cleanupAll();
-          };
-
-          reader.readAsDataURL(audioBlob);
+          );
         } catch (_) {
           clearTimeout(forceCleanupTimer);
           cleanupAll();
         }
       };
 
-      try {
-        mediaRecorder.stop();
-      } catch (_) {
+      reader.onerror = () => {
         clearTimeout(forceCleanupTimer);
         cleanupAll();
-      }
-    } else {
+      };
+
+      reader.readAsDataURL(audioBlob);
+    } catch (_) {
       clearTimeout(forceCleanupTimer);
       cleanupAll();
     }
   }
 
   function cleanupAll() {
+    unbindFullscreenAndFocusGuards();
     if (timerInterval) clearInterval(timerInterval);
     if (animFrame) cancelAnimationFrame(animFrame);
     if (micStream) {
@@ -517,6 +625,12 @@
         combinedStream.getTracks().forEach((track) => track.stop());
       } catch (_) {}
     }
+    pageMediaAudioSources.forEach((src) => {
+      try {
+        src.disconnect();
+      } catch (_) {}
+    });
+    pageMediaAudioSources = [];
     if (audioContext) {
       try {
         audioContext.close().catch(() => {});
